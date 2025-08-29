@@ -53,15 +53,15 @@
     <div class="controls">
       <label>Buy price basis
         <select id="buyBasis">
-          <option value="high">Instant Buy (avgHigh)</option>
           <option value="mid">Mid ((high+low)/2)</option>
-          <option value="low">Low (avgLow)</option>
+          <option value="high">Instant Buy (avgHigh)</option>
+		  <option value="low">Low (avgLow)</option>
         </select>
       </label>
       <label>Sell price basis
         <select id="sellBasis">
-          <option value="low">Instant Sell (avgLow)</option>
           <option value="mid">Mid ((high+low)/2)</option>
+		  <option value="low">Instant Sell (avgLow)</option>
           <option value="high">High (avgHigh)</option>
         </select>
       </label>
@@ -75,7 +75,7 @@
         </select>
       </label>
       <label>Auto-refresh (min)
-        <input id="refreshMins" type="number" min="0" step="1" value="2" />
+        <input id="refreshMins" type="number" min="0" step="1" value="10" />
       </label>
     </div>
     <div class="controls">
@@ -441,6 +441,7 @@
 </script>
 </body>
 </html>
+
 
 
 
