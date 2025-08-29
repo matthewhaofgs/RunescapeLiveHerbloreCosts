@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>OSRS Herblore — Live GP/XP (correct dose mechanics)</title>
+<style>
+  :root{ --bg:#0b0f14; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#10b981; --bad:#ef4444; --warn:#f59e0b }
+  html,body{height:100%}
+  body{margin:0; background:linear-gradient(180deg,var(--bg),#0f172a); color:var(--ink); font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}
+  header{padding:18px 20px; position:sticky; top:0; z-index:5; backdrop-filter:saturate(140%) blur(6px); background:linear-gradient(180deg,rgba(15,23,42,.9),rgba(15,23,42,.65))}
+  h1{margin:0 0 6px; font-size:20px; font-weight:700}
+  .sub{color:var(--muted); font-size:12px}
+  main{max-width:1220px; margin:16px auto 64px; padding:0 16px}
+  .card{background:var(--panel); border:1px solid #1f2937; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.25); overflow:hidden}
+  .card .hd{display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:14px 16px; border-bottom:1px solid #1f2937}
+  .controls{display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:10px; padding:12px 16px}
+  label{display:flex; align-items:center; gap:8px; color:var(--muted)}
+  select,input[type="checkbox"],input[type="number"],textarea{background:#0b1220; color:var(--ink); border:1px solid #223047; border-radius:10px; padding:8px 10px; width:100%}
+  textarea{min-height:160px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px}
+  .grid{display:grid; grid-template-columns:1fr; gap:16px}
+  .btn{appearance:none; border:1px solid #2b3a55; background:#0d1423; color:var(--ink); padding:8px 12px; border-radius:10px; cursor:pointer}
+  .btn:hover{border-color:#3f567e}
+  .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#0d1423; border:1px solid #26344f; font-size:12px; color:var(--muted)}
+  .right{margin-left:auto}
+  .tablewrap{overflow:auto; max-height:70vh}
+  table{border-collapse:separate; border-spacing:0; width:100%; font-variant-numeric:tabular-nums}
+  th,td{padding:10px 12px; border-bottom:1px solid #1f2937; white-space:nowrap}
+  th{position:sticky; top:0; background:#0e1627; text-align:left; font-weight:600; z-index:3; cursor:pointer}
+  tr:hover{background:#0c1424}
+  .num{text-align:right}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .foot{color:var(--muted); font-size:12px; padding:10px 16px}
+  details{background:#0d1423; border:1px solid #26344f; border-radius:12px; padding:10px 12px}
+  summary{cursor:pointer; color:var(--ink)}
+  .hint{color:var(--muted); font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>OSRS Herblore — Live GP/XP (correct dose mechanics)</h1>
+  <div class="sub">Uses <span class="pill">prices.runescape.wiki</span> live data. All **buy & sell valuations for any (dose) potion use the (4) price per dose**. Implements **Alchemist’s Amulet (15% extra dose, cap 4)** and **Prescription Goggles (10% secondary save)** where applicable. Crystal dust explicitly **ignored by goggles**. Divine potions priced from **ECTS → shards → dust** when selected.</div>
+</header>
+
+<main class="grid">
+  <section class="card">
+    <div class="hd">
+      <strong>Options</strong>
+      <span id="status" class="pill">Loading mapping…</span>
+      <span id="lastUpdate" class="pill right">—</span>
+    </div>
+    <div class="controls">
+      <label>Buy price basis
+        <select id="buyBasis">
+          <option value="high">Instant Buy (avgHigh)</option>
+          <option value="mid">Mid ((high+low)/2)</option>
+          <option value="low">Low (avgLow)</option>
+        </select>
+      </label>
+      <label>Sell price basis
+        <select id="sellBasis">
+          <option value="low">Instant Sell (avgLow)</option>
+          <option value="mid">Mid ((high+low)/2)</option>
+          <option value="high">High (avgHigh)</option>
+        </select>
+      </label>
+      <label>GE tax on sale (2%)
+        <input id="tax" type="checkbox" checked>
+      </label>
+      <label>Crystal dust pricing
+        <select id="dustMode">
+          <option value="ects">From Enhanced crystal teleport seed → 150 shards → 10 dust/shard</option>
+          <option value="market">Direct (Crystal dust)</option>
+        </select>
+      </label>
+      <label>Auto-refresh (min)
+        <input id="refreshMins" type="number" min="0" step="1" value="2" />
+      </label>
+    </div>
+    <div class="controls">
+      <details>
+        <summary>Recipe list (editable JSON)</summary>
+        <div class="hint">Fields: <code>name</code>, <code>baseDoses</code> (the dose count you are crafting: 1/2/3/4 or 3 for typical potions), <code>xp</code> (per craft), <code>product3</code>/<code>product4</code> (for sale valuation), <code>components</code> (array). A component is either <code>"Item"</code>, <code>"Item * qty"</code>, or an object <code>{name, qty}</code> if the quantity scales with the base dose (e.g., amylase, lava shards, Zulrah's scales, crystal dust). **Goggles 10% save** applies to secondary components (anything that isn’t a potion/unf) unless the name contains <code>Crystal dust</code>.</div>
+        <textarea id="recipesBox"></textarea>
+        <div class="hint" style="margin-top:6px">Saved to LocalStorage. You can paste your own full list here.</div>
+        <div style="display:flex; gap:8px; margin-top:8px">
+          <button class="btn" id="applyRecipes">Apply recipes</button>
+          <button class="btn" id="resetRecipes">Reset defaults</button>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd">
+      <strong>Results (valued using 4-dose prices per dose)</strong>
+      <div class="right" style="display:flex; gap:8px">
+        <button class="btn" id="copyCsv">Copy CSV</button>
+        <button class="btn" id="downloadCsv">Download CSV</button>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th data-k="name">Potion</th>
+            <th data-k="xp" class="num">XP</th>
+            <th data-k="baseDoses" class="num">Base doses</th>
+            <th data-k="expDoses" class="num">Expected doses</th>
+            <th data-k="cost" class="num">Buy cost</th>
+            <th data-k="revenue" class="num">Sell value</th>
+            <th data-k="profit" class="num">GP / potion</th>
+            <th data-k="gpxp" class="num">GP / XP</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="foot">
+      Mechanics assumptions: (1) <b>Amulet</b>: adds 0.15 dose to results with &lt;4 base doses (capped at 4). (2) <b>Goggles</b>: 10% expected save on secondaries (excludes crystal dust). (3) <b>4‑dose valuation</b>: any potion buy/sell is computed from the (4) item’s per‑dose price × doses, never the (1/2/3) item’s own GE price. (4) Divine dust from ECTS when selected. Change any of these by editing recipes or toggles.
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const fmt = n => (n==null || Number.isNaN(n))? '—' : n.toLocaleString();
+  const n2 = n => (n==null || Number.isNaN(n))? null : +n;
+  const HEADERS = {'Accept':'application/json','Api-User-Agent':'HerbLive/2.0 (single-file browser app)'};
+
+  const els = {
+    status: $('#status'), lastUpdate: $('#lastUpdate'),
+    buyBasis: $('#buyBasis'), sellBasis: $('#sellBasis'), tax: $('#tax'), dustMode: $('#dustMode'), refreshMins: $('#refreshMins'),
+    recipesBox: $('#recipesBox'), applyRecipes: $('#applyRecipes'), resetRecipes: $('#resetRecipes'),
+    tbody: $('#tbody'), tbl: $('#tbl'), copyCsv: $('#copyCsv'), downloadCsv: $('#downloadCsv')
+  };
+
+  // ===== String helpers =====
+  function parseDoseSuffix(name){
+    const m = String(name).trim().match(/\((\d)\)$/); return m? Number(m[1]) : null;
+  }
+  const isPotionName = (name)=> /\(\d\)$/.test(name);
+  const isUnf = (name)=> /\(unf\)/i.test(name);
+
+  // ===== Price data =====
+  let MAP=null, PRICE=null; // mapping name->item, latest id->price
+  async function fetchMapping(){
+    els.status.textContent='Loading mapping…';
+    const r=await fetch('https://prices.runescape.wiki/api/v1/osrs/mapping',{headers:HEADERS});
+    if(!r.ok) throw new Error('mapping '+r.status);
+    const arr=await r.json(); const map=new Map(); for(const it of arr){ map.set(it.name.toLowerCase(), it); }
+    MAP=map; els.status.textContent='Mapping ready ('+arr.length+' items)';
+  }
+  async function fetchLatest(){
+    els.status.textContent='Fetching latest…';
+    const r=await fetch('https://prices.runescape.wiki/api/v1/osrs/latest',{headers:HEADERS});
+    if(!r.ok) throw new Error('latest '+r.status);
+    const j=await r.json(); PRICE=j.data; els.lastUpdate.textContent='Updated '+new Date().toLocaleTimeString(); els.status.textContent='Prices ready';
+  }
+  function findItem(name){ return MAP?.get(String(name).trim().toLowerCase()) || null; }
+  function priceFor(nameOrId){
+    if(!PRICE) return null; let id=null, label='';
+    if(typeof nameOrId==='number' || /^\d+$/.test(String(nameOrId))){ id=String(nameOrId); label=id; }
+    else { const it=findItem(nameOrId); if(!it) return null; id=String(it.id); label=it.name; }
+    const p=PRICE[id]; if(!p) return null; return {id,label,high:n2(p.high),low:n2(p.low)};
+  }
+  function basisVal(p,basis){ if(!p) return null; if(basis==='high') return n2(p.high); if(basis==='low') return n2(p.low); return (p.high!=null&&p.low!=null)? (p.high+p.low)/2 : (p.high ?? p.low ?? null); }
+
+  // ===== 4-dose per-dose pricing =====
+  function perDoseFrom4(itemName, basis){
+    // If the item has dose variants, value it from the (4) variant per dose; else normal basis
+    const d=parseDoseSuffix(itemName);
+    if(d==null){ // non-dose item
+      const p=priceFor(itemName); return basisVal(p, basis);
+    }
+    // Same item but (4)
+    const base=itemName.replace(/\((\d)\)$/,'(4)');
+    const p4=priceFor(base); const v4=basisVal(p4, basis);
+    return v4!=null? (v4/4) : null;
+  }
+
+  // Crystal dust from ECTS -> 150 shards -> 10 dust/shard
+  function dustUnitFromECTS(basis){
+    const ects=priceFor('Enhanced crystal teleport seed'); const v=basisVal(ects, basis);
+    return v==null? null : v/(150*10);
+  }
+
+  function isSecondary(name){
+    // Secondary = not a dose potion AND not an (unf) AND not a vial of water etc.
+    return !(isPotionName(name) || isUnf(name));
+  }
+
+  // ===== Core calc =====
+  function computeRow(rec){
+    const buyB=els.buyBasis.value, sellB=els.sellBasis.value, tax=els.tax.checked? 0.02 : 0;
+
+    // Expected output doses with Amulet (applies when baseDoses < 4). Cap at 4. 0.15 extra dose.
+    const baseD=rec.baseDoses||3; const expD=Math.min(4, baseD + 0.15);
+
+    // Cost of components
+    let cost=0; const missing=[]; let notes=[];
+    for(const raw of rec.components){
+      const c = (typeof raw==='string')? (raw.includes('*')? {name:raw.split('*')[0].trim(), qty:Number(raw.split('*')[1].trim())} : {name:raw.trim(), qty:1}) : raw;
+      let unit=null;
+      if(/crystal\s*dust/i.test(c.name)){ // dust special-case (goggles OFF)
+        unit = els.dustMode.value==='ects' ? dustUnitFromECTS(buyB) : perDoseFrom4('Crystal dust(4?)', buyB); // perDoseFrom4 just ignores doses; fallback below
+        if(unit==null){ const pd=priceFor('Crystal dust'); unit=basisVal(pd,buyB); }
+      } else if(isPotionName(c.name)){
+        // Any potion as a component: value per-dose from its (4) price, then multiply by (perBaseDose? baseD : doses parsed in name)
+        const perDose=perDoseFrom4(c.name, buyB);
+        const qty = c.perBaseDose? baseD : (c.qty ?? parseDoseSuffix(c.name) ?? 1);
+        unit = perDose; cost += (unit==null? 0 : unit * qty); if(unit==null) missing.push(c.name);
+        continue;
+      } else {
+        const p=priceFor(c.name); unit=basisVal(p,buyB);
+      }
+      if(unit==null){ missing.push(c.name); continue; }
+      // Goggles 10% save for secondaries (except crystal dust)
+      const save = (isSecondary(c.name) && !/crystal\s*dust/i.test(c.name))? 0.10 : 0;
+      const qtyBase = c.perBaseDose? baseD : (c.qty ?? 1);
+      const effQty = qtyBase * (1 - save);
+      cost += unit * effQty;
+      if(save>0) notes.push(`Goggles saved ~${(save*100)|0}% on ${c.name}`);
+    }
+
+    // Revenue: value product strictly from (4) per-dose price
+    const p4=priceFor(rec.product4); const perDoseSell = basisVal(p4, sellB);
+    const perDoseSellVal = perDoseSell!=null? perDoseSell/4 : null;
+    const revenue = perDoseSellVal!=null? (perDoseSellVal * expD) * (1 - tax) : null;
+    const profit = (revenue!=null && cost!=null)? (revenue - cost) : null;
+    const gpxp = (rec.xp>0 && profit!=null)? (profit/rec.xp) : null;
+
+    const noteBits=[];
+    if(perDoseSellVal==null) noteBits.push(`Missing price: ${rec.product4}`);
+    if(missing.length) noteBits.push(`Missing price: ${missing.join(', ')}`);
+    noteBits.push(`Sell using (4) per‑dose`);
+    return {name:rec.name, xp:rec.xp, baseDoses:baseD, expDoses:expD, cost, revenue, profit, gpxp, note:(notes.length? notes.join('; ')+'. ' : '') + noteBits.join(' · ')};
+  }
+
+  function renderRows(rows){
+    const tb=els.tbody; tb.innerHTML='';
+    for(const r of rows){
+      const tr=document.createElement('tr'); const cls=r.profit==null? '' : (r.profit>=0? 'ok':'bad');
+      tr.innerHTML=`
+        <td>${r.name}</td>
+        <td class="num">${fmt(r.xp)}</td>
+        <td class="num">${fmt(r.baseDoses)}</td>
+        <td class="num">${fmt(r.expDoses.toFixed(2))}</td>
+        <td class="num mono">${fmt(Math.round(r.cost??0))}</td>
+        <td class="num mono">${fmt(Math.round(r.revenue??0))}</td>
+        <td class="num mono ${cls}">${r.profit==null? '—' : fmt(Math.round(r.profit))}</td>
+        <td class="num mono ${cls}">${r.gpxp==null? '—' : ( (r.gpxp>=0? '+':'') + r.gpxp.toFixed(3) )}</td>
+        <td class="hint">${r.note}</td>`;
+      tb.appendChild(tr);
+    }
+  }
+
+  function toCsv(rows){
+    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','GP per XP','Notes'];
+    const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
+    return [hdr.join(','),...body].join('\n');
+  }
+  function sortBy(rows,key,asc=true){ const a=[...rows]; a.sort((x,y)=>{const vx=x[key], vy=y[key]; if(vx==null&&vy==null) return 0; if(vx==null) return 1; if(vy==null) return -1; return (asc?1:-1)*(vx>vy?1:vx<vy?-1:0)}); return a; }
+
+  // ===== Defaults (includes stamina 1–4, anti-venom(±) 1–4, extendeds, divine 1–4) =====
+  const DEFAULTS=[
+    // ----- Common 3-dose training examples (amulet applies -> expected 3.15) -----
+    {name:'Attack potion', baseDoses:3, xp:25, product3:'Attack potion(3)', product4:'Attack potion(4)', components:['Guam potion (unf)','Eye of newt']},
+    {name:'Prayer potion', baseDoses:3, xp:87.5, product3:'Prayer potion(3)', product4:'Prayer potion(4)', components:['Ranarr potion (unf)','Snape grass']},
+
+    // ----- Stamina: Super energy(d) + amylase * d; XP 25.5 per dose. Goggles apply to amylase.
+    {name:'Stamina(1)', baseDoses:1, xp:25.5, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(1)'},{name:'Amylase crystal', qty:1}]},
+    {name:'Stamina(2)', baseDoses:2, xp:51.0, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(2)'},{name:'Amylase crystal', qty:2}]},
+    {name:'Stamina(3)', baseDoses:3, xp:76.5, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(3)'},{name:'Amylase crystal', qty:3}]},
+    {name:'Stamina(4)', baseDoses:4, xp:102.0, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(4)'},{name:'Amylase crystal', qty:4}]},
+
+    // ----- Anti-venom: Antidote++(d) + 5 scales per dose (goggles save applies). XP 30 per dose.
+    {name:'Anti-venom (1)', baseDoses:1, xp:30, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(1)"},{name:"Zulrah's scales", qty:5}]},
+    {name:'Anti-venom (2)', baseDoses:2, xp:60, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(2)"},{name:"Zulrah's scales", qty:10}]},
+    {name:'Anti-venom (3)', baseDoses:3, xp:90, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(3)"},{name:"Zulrah's scales", qty:15}]},
+    {name:'Anti-venom (4)', baseDoses:4, xp:120, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(4)"},{name:"Zulrah's scales", qty:20}]},
+
+    // ----- Anti-venom+: Anti-venom(d) + 1 Torstol (per potion, not per dose). XP 125 per craft.
+    {name:'Anti-venom+ (1)', baseDoses:1, xp:125, product3:'Anti-venom+(3)', product4:'Anti-venom+(4)', components:[{name:'Anti-venom(1)'},{name:'Torstol', qty:1}]},
+    {name:'Anti-venom+ (2)', baseDoses:2, xp:125, product3:'Anti-venom+(3)', product4:'Anti-venom+(4)', components:[{name:'Anti-venom(2)'},{name:'Torstol', qty:1}]},
+    {name:'Anti-venom+ (3)', baseDoses:3, xp:125, product3:'Anti-venom+(3)', product4:'Anti-venom+(4)', components:[{name:'Anti-venom(3)'},{name:'Torstol', qty:1}]},
+    {name:'Anti-venom+ (4)', baseDoses:4, xp:125, product3:'Anti-venom+(3)', product4:'Anti-venom+(4)', components:[{name:'Anti-venom(4)'},{name:'Torstol', qty:1}]},
+
+    // ----- Extended antifire: Antifire(d) + 1 Lava scale shard per dose. XP 27.5 per shard.
+    {name:'Extended antifire (1)', baseDoses:1, xp:27.5, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(1)'},{name:'Lava scale shard', qty:1}]},
+    {name:'Extended antifire (2)', baseDoses:2, xp:55, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(2)'},{name:'Lava scale shard', qty:2}]},
+    {name:'Extended antifire (3)', baseDoses:3, xp:82.5, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(3)'},{name:'Lava scale shard', qty:3}]},
+    {name:'Extended antifire (4)', baseDoses:4, xp:110, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(4)'},{name:'Lava scale shard', qty:4}]},
+
+    // ----- Super antifire: Antifire(d) + 1 crushed superior dragon bones (per potion). XP 130.
+    {name:'Super antifire (1)', baseDoses:1, xp:130, product3:'Super antifire potion(3)', product4:'Super antifire potion(4)', components:[{name:'Antifire potion(1)'},{name:'Crushed superior dragon bones', qty:1}]},
+    {name:'Super antifire (2)', baseDoses:2, xp:130, product3:'Super antifire potion(3)', product4:'Super antifire potion(4)', components:[{name:'Antifire potion(2)'},{name:'Crushed superior dragon bones', qty:1}]},
+    {name:'Super antifire (3)', baseDoses:3, xp:130, product3:'Super antifire potion(3)', product4:'Super antifire potion(4)', components:[{name:'Antifire potion(3)'},{name:'Crushed superior dragon bones', qty:1}]},
+    {name:'Super antifire (4)', baseDoses:4, xp:130, product3:'Super antifire potion(3)', product4:'Super antifire potion(4)', components:[{name:'Antifire potion(4)'},{name:'Crushed superior dragon bones', qty:1}]},
+
+    // ----- Extended super antifire: Super antifire(d) + 1 lava scale shard per dose. XP 40 per shard.
+    {name:'Extended super antifire (1)', baseDoses:1, xp:40, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(1)'},{name:'Lava scale shard', qty:1}]},
+    {name:'Extended super antifire (2)', baseDoses:2, xp:80, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(2)'},{name:'Lava scale shard', qty:2}]},
+    {name:'Extended super antifire (3)', baseDoses:3, xp:120, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(3)'},{name:'Lava scale shard', qty:3}]},
+    {name:'Extended super antifire (4)', baseDoses:4, xp:160, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(4)'},{name:'Lava scale shard', qty:4}]},
+
+    // ----- Divine potions (dust per dose; XP = 0) — include 1–4 dose variants for each type
+    // Super combat
+    {name:'Divine super combat (1)', baseDoses:1, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super combat (2)', baseDoses:2, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super combat (3)', baseDoses:3, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super combat (4)', baseDoses:4, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(4)'},{name:'Crystal dust', qty:4}]},
+    // Super attack
+    {name:'Divine super attack (1)', baseDoses:1, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super attack (2)', baseDoses:2, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super attack (3)', baseDoses:3, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super attack (4)', baseDoses:4, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(4)'},{name:'Crystal dust', qty:4}]},
+    // Super strength
+    {name:'Divine super strength (1)', baseDoses:1, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super strength (2)', baseDoses:2, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super strength (3)', baseDoses:3, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super strength (4)', baseDoses:4, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(4)'},{name:'Crystal dust', qty:4}]},
+    // Super defence
+    {name:'Divine super defence (1)', baseDoses:1, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super defence (2)', baseDoses:2, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super defence (3)', baseDoses:3, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super defence (4)', baseDoses:4, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(4)'},{name:'Crystal dust', qty:4}]},
+    // Ranging
+    {name:'Divine ranging (1)', baseDoses:1, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine ranging (2)', baseDoses:2, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine ranging (3)', baseDoses:3, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine ranging (4)', baseDoses:4, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(4)'},{name:'Crystal dust', qty:4}]},
+    // Magic
+    {name:'Divine magic (1)', baseDoses:1, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine magic (2)', baseDoses:2, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine magic (3)', baseDoses:3, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine magic (4)', baseDoses:4, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(4)'},{name:'Crystal dust', qty:4}]},
+    // Bastion
+    {name:'Divine bastion (1)', baseDoses:1, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine bastion (2)', baseDoses:2, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine bastion (3)', baseDoses:3, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine bastion (4)', baseDoses:4, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(4)'},{name:'Crystal dust', qty:4}]},
+    // Battlemage
+    {name:'Divine battlemage (1)', baseDoses:1, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine battlemage (2)', baseDoses:2, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine battlemage (3)', baseDoses:3, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine battlemage (4)', baseDoses:4, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(4)'},{name:'Crystal dust', qty:4}]},
+
+	// --- Extended anti-venom+ (per-dose uses 1 Araxyte venom sack; xp not typically used for training)
+   {name:'Extended anti-venom+ (1)', baseDoses:1, xp:20, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(1)'},{name:'Araxyte venom sack', qty:1}]},
+   {name:'Extended anti-venom+ (2)', baseDoses:2, xp:40, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(2)'},{name:'Araxyte venom sack', qty:2}]},
+   {name:'Extended anti-venom+ (3)', baseDoses:3, xp:60, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(3)'},{name:'Araxyte venom sack', qty:3}]},
+   {name:'Extended anti-venom+ (4)', baseDoses:4, xp:80, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(4)'},{name:'Araxyte venom sack', qty:4}]}
+  
+  
+  ];
+
+  function load(){ try{ const raw=localStorage.getItem('herb_recipes_dosefix'); if(raw) return JSON.parse(raw); }catch(e){} return DEFAULTS; }
+  function save(x){ localStorage.setItem('herb_recipes_dosefix', JSON.stringify(x, null, 2)); }
+
+  let RECIPES = load();
+  els.recipesBox.value = JSON.stringify(RECIPES, null, 2);
+
+  let rows=[];
+  async function compute(){ if(!MAP||!PRICE) return; rows = RECIPES.map(computeRow); rows = sortBy(rows,'profit',false); renderRows(rows); }
+
+  // Interactions
+  els.applyRecipes.addEventListener('click', ()=>{ try{ RECIPES=JSON.parse(els.recipesBox.value); save(RECIPES); compute(); }catch(e){ alert('Invalid JSON: '+e.message);} });
+  els.resetRecipes.addEventListener('click', ()=>{ RECIPES=DEFAULTS; els.recipesBox.value=JSON.stringify(RECIPES,null,2); save(RECIPES); compute(); });
+
+  // Sorting
+  let sortKey='profit', sortAsc=false; const thead=document.querySelector('#tbl thead');
+  thead.addEventListener('click', (e)=>{ const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k; if(!k) return; if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; } rows=sortBy(rows,sortKey,sortAsc); renderRows(rows); });
+
+  // CSV
+  els.copyCsv.addEventListener('click', ()=>{ try{ navigator.clipboard.writeText(toCsv(rows)); alert('CSV copied.'); }catch(e){ alert('Copy failed: '+e.message);} });
+  els.downloadCsv.addEventListener('click', ()=>{ const blob=new Blob([toCsv(rows)],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:'herblore-live-dosefix.csv'}); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
+
+  // Auto refresh
+  let timer=null; function setTimer(){ if(timer) clearInterval(timer); const mins=Math.max(0, Number(els.refreshMins.value||0)); if(mins>0){ timer=setInterval(async()=>{ try{ await fetchLatest(); await compute(); }catch(e){ els.status.textContent='Refresh error: '+e.message; } }, mins*60*1000);} }
+  els.refreshMins.addEventListener('change', setTimer);
+
+  (async function boot(){ try{ await fetchMapping(); await fetchLatest(); await compute(); setTimer(); } catch(e){ console.error(e); els.status.textContent='Error: '+e.message; } })();
+})();
+</script>
+</body>
+</html>
