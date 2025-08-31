@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>OSRS Herblore — Live GP/XP (correct dose mechanics)</title>
+<title>OSRS Herblore — Live GP/XP (correct dose mechanics + Profit %)</title>
 <style>
   :root{ --bg:#0b0f14; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#10b981; --bad:#ef4444; --warn:#f59e0b }
   html,body{height:100%}
@@ -111,6 +111,7 @@
             <th data-k="cost" class="num">Buy cost</th>
             <th data-k="revenue" class="num">Sell value</th>
             <th data-k="profit" class="num">GP / potion</th>
+            <th data-k="profitPct" class="num">Profit %</th>
             <th data-k="gpxp" class="num">GP / XP</th>
             <th>Notes</th>
           </tr>
@@ -128,6 +129,7 @@
 (function(){
   const $ = s => document.querySelector(s);
   const fmt = n => (n==null || Number.isNaN(n))? '—' : n.toLocaleString();
+  const pct = n => (n==null || Number.isNaN(n))? '—' : ((n>=0?'+':'') + n.toFixed(1) + '%');
   const n2 = n => (n==null || Number.isNaN(n))? null : +n;
   const HEADERS = {'Accept':'application/json','Api-User-Agent':'HerbLive/2.0 (single-file browser app)'};
 
@@ -232,12 +234,13 @@
     const revenue = perDoseSellVal!=null? (perDoseSellVal * expD) * (1 - tax) : null;
     const profit = (revenue!=null && cost!=null)? (revenue - cost) : null;
     const gpxp = (rec.xp>0 && profit!=null)? (profit/rec.xp) : null;
+    const profitPct = (profit!=null && cost>0)? (profit/cost*100) : null;
 
     const noteBits=[];
     if(perDoseSellVal==null) noteBits.push(`Missing price: ${rec.product4}`);
     if(missing.length) noteBits.push(`Missing price: ${missing.join(', ')}`);
     noteBits.push(`Sell using (4) per‑dose`);
-    return {name:rec.name, xp:rec.xp, baseDoses:baseD, expDoses:expD, cost, revenue, profit, gpxp, note:(notes.length? notes.join('; ')+'. ' : '') + noteBits.join(' · ')};
+    return {name:rec.name, xp:rec.xp, baseDoses:baseD, expDoses:expD, cost, revenue, profit, profitPct, gpxp, note:(notes.length? notes.join('; ')+'. ' : '') + noteBits.join(' · ')};
   }
 
   function renderRows(rows){
@@ -252,6 +255,7 @@
         <td class="num mono">${fmt(Math.round(r.cost??0))}</td>
         <td class="num mono">${fmt(Math.round(r.revenue??0))}</td>
         <td class="num mono ${cls}">${r.profit==null? '—' : fmt(Math.round(r.profit))}</td>
+        <td class="num mono ${cls}">${pct(r.profitPct)}</td>
         <td class="num mono ${cls}">${r.gpxp==null? '—' : ( (r.gpxp>=0? '+':'') + r.gpxp.toFixed(3) )}</td>
         <td class="hint">${r.note}</td>`;
       tb.appendChild(tr);
@@ -259,8 +263,8 @@
   }
 
   function toCsv(rows){
-    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','GP per XP','Notes'];
-    const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
+    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','Profit % of cost','GP per XP','Notes'];
+    const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),r.profitPct==null?'':r.profitPct.toFixed(2),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
     return [hdr.join(','),...body].join('\n');
   }
   function sortBy(rows,key,asc=true){ const a=[...rows]; a.sort((x,y)=>{const vx=x[key], vy=y[key]; if(vx==null&&vy==null) return 0; if(vx==null) return 1; if(vy==null) return -1; return (asc?1:-1)*(vx>vy?1:vx<vy?-1:0)}); return a; }
@@ -441,10 +445,3 @@
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
