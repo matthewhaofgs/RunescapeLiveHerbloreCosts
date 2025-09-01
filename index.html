@@ -3,73 +3,145 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>OSRS Herblore — Live GP/XP (cleaned)</title>
+<title>OSRS Herblore — Live GP/XP</title>
 <style>
-  :root{ --bg:#0b0f14; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#10b981; --bad:#ef4444 }
+  /* =====================
+     THEME & TOKENS
+  ====================== */
+  :root{
+    --bg:#0a0f17;           /* page background */
+    --panel:#0f1726;        /* cards & table */
+    --panel-2:#0b1220;      /* inputs */
+    --ink:#e8edf7;          /* text */
+    --muted:#96a3b8;        /* secondary text */
+    --border:#1e2a40;       /* subtle borders */
+    --accent:#7aa6ff;       /* primary accent */
+    --accent-2:#8be5ff;     /* secondary accent */
+    --ok:#10b981;           /* positive */
+    --warn:#f59e0b;         /* warning */
+    --bad:#ef4444;          /* negative */
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+    --radius:16px;
+    --radius-sm:10px;
+    --fx-fast:150ms cubic-bezier(.2,.7,.2,1);
+    --fx-med:260ms cubic-bezier(.2,.7,.2,1);
+    --fx-slow:420ms cubic-bezier(.2,.7,.2,1);
+  }
+
+  *{box-sizing:border-box}
   html,body{height:100%}
-  body{margin:0; background:linear-gradient(180deg,var(--bg),#0f172a); color:var(--ink); font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}
-  header{padding:18px 20px; position:sticky; top:0; z-index:5; backdrop-filter:saturate(140%) blur(6px); background:linear-gradient(180deg,rgba(15,23,42,.9),rgba(15,23,42,.65))}
-  h1{margin:0 0 6px; font-size:20px; font-weight:700}
+  body{
+    margin:0; color:var(--ink); background:radial-gradient(1200px 800px at 80% -10%, rgba(122,166,255,.12), transparent 60%),
+                                       radial-gradient(900px 600px at 10% -10%, rgba(139,229,255,.08), transparent 60%),
+                                       linear-gradient(180deg,var(--bg),#0b1220 40%, #0a1020 100%);
+    font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header{
+    position:sticky; top:0; z-index:10; padding:18px 20px; backdrop-filter:saturate(140%) blur(8px);
+    background:linear-gradient(180deg,rgba(13,21,38,.9),rgba(13,21,38,.55));
+    border-bottom:1px solid rgba(122,166,255,.08);
+  }
+  h1{margin:0 0 6px; font-size:20px; font-weight:800; letter-spacing:.2px}
   .sub{color:var(--muted); font-size:12px}
-  main{max-width:1220px; margin:16px auto 64px; padding:0 16px}
-  .card{background:var(--panel); border:1px solid #1f2937; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.25); overflow:hidden}
-  .card .hd{display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:14px 16px; border-bottom:1px solid #1f2937}
-  .controls{display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:10px; padding:12px 16px}
-  label{display:flex; align-items:center; gap:8px; color:var(--muted)}
-  select,input[type="checkbox"],input[type="number"],textarea{background:#0b1220; color:var(--ink); border:1px solid #223047; border-radius:10px; padding:8px 10px; width:100%}
-  .grid{display:grid; grid-template-columns:1fr; gap:16px}
-  .btn{appearance:none; border:1px solid #2b3a55; background:#0d1423; color:var(--ink); padding:8px 12px; border-radius:10px; cursor:pointer}
-  .btn:hover{border-color:#3f567e}
-  button:disabled{opacity:.6; cursor:not-allowed}
-  .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#0d1423; border:1px solid #26344f; font-size:12px; color:var(--muted)}
+
+  main{max-width:1220px; margin:18px auto 72px; padding:0 16px}
+
+  /* Card */
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+  .card .hd{display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:14px 16px; border-bottom:1px solid var(--border)}
+
+  /* Pills & status */
+  .pill{display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:linear-gradient(180deg,#0d1423,#0b1220);
+        border:1px solid #26344f; font-size:12px; color:var(--muted)}
   .right{margin-left:auto}
-  .tablewrap{overflow:auto; max-height:70vh}
+  .busy::before{content:""; width:10px; height:10px; border:2px solid #6b7fa6; border-top-color:var(--accent); border-radius:50%;
+    display:inline-block; animation:spin 1s linear infinite}
+  @keyframes spin {to{transform:rotate(360deg)}}
+
+  /* Controls */
+  .controls{display:grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap:12px; padding:12px 16px; background:linear-gradient(180deg,#0f1726,#0c1527)}
+  label{display:flex; align-items:center; gap:8px; color:var(--muted)}
+  select,input[type="checkbox"],input[type="number"]{background:var(--panel-2); color:var(--ink); border:1px solid #223047; border-radius:var(--radius-sm); padding:9px 10px; width:100%}
+  .autorefresh .row{display:flex; align-items:center; gap:8px; width:100%}
+
+  /* Buttons */
+  .btn{appearance:none; border:1px solid #2b3a55; background:linear-gradient(180deg,#0e1526,#0d1423); color:var(--ink); padding:9px 12px; border-radius:12px; cursor:pointer; transition:transform var(--fx-fast), border-color var(--fx-fast), box-shadow var(--fx-fast)}
+  .btn:hover{border-color:#3f567e; transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.primary{border-color:transparent; background:linear-gradient(135deg, #6292ff, #58d3ff); color:#041226; font-weight:700}
+  .btn.primary:hover{filter:brightness(1.05)}
+  button:disabled{opacity:.6; cursor:not-allowed}
+
+  /* Table */
+  .tablewrap{overflow:auto; max-height:70vh; overscroll-behavior:contain}
+  .tablewrap::-webkit-scrollbar{height:10px; width:10px}
+  .tablewrap::-webkit-scrollbar-thumb{background:#24324f; border-radius:20px}
   table{border-collapse:separate; border-spacing:0; width:100%; font-variant-numeric:tabular-nums}
-  th,td{padding:10px 12px; border-bottom:1px solid #1f2937; white-space:nowrap; vertical-align:middle}
-  th{position:sticky; top:0; background:#0e1627; text-align:left; font-weight:600; z-index:3; cursor:pointer}
+  th,td{padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap; vertical-align:middle}
+  th{position:sticky; top:0; background:linear-gradient(180deg,#0e1627,#0d1526); text-align:left; font-weight:700; z-index:3; cursor:pointer}
+  th .ico{margin-left:6px; opacity:.6; font-size:11px}
+  th.sorted{color:#d7e0ff}
+  th.sorted.asc .ico{opacity:1}
+  th.sorted.desc .ico{opacity:1}
   tr:hover{background:#0c1424}
+  tr.row[aria-expanded="true"]{background:#101a2f}
   .num{text-align:right}
   .ok{color:var(--ok)} .bad{color:var(--bad)}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .foot{color:var(--muted); font-size:12px; padding:10px 16px}
   .hint{color:var(--muted); font-size:12px}
 
-  /* Main table: let Notes wrap and visually separate it */
-  #tbl td:last-child, #tbl th:last-child{ border-left:1px solid #26344f; }
+  /* Make notes wrap and separate visually */
+  #tbl td:last-child, #tbl th:last-child{ border-left:1px solid #223356; }
   .notes{ white-space:normal; overflow-wrap:anywhere; line-height:1.35 }
 
-  /* Row details block */
-  tr.detail td{ padding:0; background:#0a1120; }
-  .expand{ padding:12px 16px; border-top:1px solid #15223a; }
-  .expand h4{ margin:0 0 8px; font-size:14px; font-weight:700 }
+  /* Chevron + row focus */
+  .namecell{display:flex; align-items:center; gap:10px}
+  .chev{width:10px; height:10px; display:inline-block; transform:rotate(0deg); transition:transform var(--fx-med)}
+  .row:focus{outline:2px solid rgba(122,166,255,.7); outline-offset:-2px}
+  .row[aria-expanded="true"] .chev{transform:rotate(90deg)}
+
+  /* Detail row animation (collapsible) */
+  tr.detail td{ padding:0; background:#0a1120; border-bottom:1px solid var(--border) }
+  .expand{ overflow:hidden; max-height:0; opacity:0; transform:translateY(-4px); transition:max-height var(--fx-slow), opacity var(--fx-med), transform var(--fx-med); }
+  tr.detail.open .expand{ opacity:1; transform:translateY(0) }
+  /* When open we add padding & border via inner wrapper so closed state stays compact */
+  .expand-inner{ padding:12px 16px; border-top:1px solid #15223a; background:linear-gradient(180deg,#0b1324,#0a1222) }
+
+  .expand h4{ margin:0 0 8px; font-size:14px; font-weight:800 }
   .expand .meta{ color:var(--muted); font-size:12px; margin-bottom:8px }
   .expand table{ width:100%; border-collapse:separate; border-spacing:0; }
   .expand th, .expand td{ border-bottom:1px solid #16223a; padding:8px 10px; white-space:nowrap; vertical-align:top }
   .expand th + th, .expand td + td{ border-left:1px solid #16223a; }
   .expand .num{ padding-right:14px; }
   .expand th{ background:#0c1629; position:static; cursor:default }
-  .expand a{ color:var(--accent); text-decoration:none }
-  .expand a:hover{ text-decoration:underline }
   .expand td:last-child{ white-space:normal; overflow-wrap:anywhere; }
-  .kbd{ font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding:1px 6px; border:1px solid #2b3a55; border-radius:6px; background:#0d1423; color:var(--muted); font-size:11px }
-  .rowclick{ cursor:pointer }
+  .kbd{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; padding:1px 6px; border:1px solid #2b3a55; border-radius:6px; background:#0d1423; color:var(--muted); font-size:11px }
 
-  /* Refresh-now layout */
-  .autorefresh .row{ display:flex; align-items:center; gap:8px; width:100% }
-  .autorefresh input{ flex:1 }
+  /* Empty state */
+  .empty{padding:28px; text-align:center; color:var(--muted)}
+
+  /* Utility */
+  .fade-in{animation:fadeIn var(--fx-slow)}
+  @keyframes fadeIn{from{opacity:.6; transform:translateY(4px)} to{opacity:1; transform:translateY(0)}}
 </style>
 </head>
 <body>
 <header>
   <h1>OSRS Herblore — Live GP/XP</h1>
-  <div class="sub">Uses <span class="pill">prices.runescape.wiki</span> live data. Per‑dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles 10% save on secondaries (excl. crystal dust). ECTS pricing option for dust.</div>
+  <div class="sub">Live pricing via <span class="pill">prices.runescape.wiki</span>. Per‑dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles −10% secondary save (excl. crystal dust). Optional ECTS pricing.</div>
 </header>
 
-<main class="grid">
+<main class="fade-in">
   <section class="card">
     <div class="hd">
       <strong>Options</strong>
-      <span id="status" class="pill">Loading mapping…</span>
+      <span id="status" class="pill busy">Loading…</span>
       <span id="lastUpdate" class="pill right">—</span>
     </div>
     <div class="controls">
@@ -96,7 +168,7 @@
           <option value="market">Direct (Crystal dust)</option>
         </select>
       </label>
-      <label class="autorefresh">Auto-refresh (min)
+      <label class="autorefresh">Auto‑refresh (min)
         <div class="row">
           <input id="refreshMins" type="number" min="0" step="1" value="10" />
           <button class="btn" id="refreshNow" type="button" title="Fetch latest and recompute">Refresh now</button>
@@ -105,31 +177,34 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" style="margin-top:14px">
     <div class="hd">
-      <strong>Results (valued using 4-dose prices per dose)</strong>
+      <strong>Results (valued using 4‑dose prices per dose)</strong>
       <div class="right" style="display:flex; gap:8px">
         <button class="btn" id="copyCsv">Copy CSV</button>
-        <button class="btn" id="downloadCsv">Download CSV</button>
+        <button class="btn primary" id="downloadCsv">Download CSV</button>
       </div>
     </div>
+
     <div class="tablewrap">
-      <table id="tbl">
+      <table id="tbl" aria-live="polite">
         <thead>
           <tr>
-            <th data-k="name">Potion</th>
-            <th data-k="xp" class="num">XP</th>
-            <th data-k="baseDoses" class="num">Base doses</th>
-            <th data-k="expDoses" class="num">Expected doses</th>
-            <th data-k="cost" class="num">Buy cost</th>
-            <th data-k="revenue" class="num">Sell value</th>
-            <th data-k="profit" class="num">GP / potion</th>
-            <th data-k="profitPct" class="num">Profit %</th>
-            <th data-k="gpxp" class="num">GP / XP</th>
+            <th data-k="name">Potion <span class="ico">↕</span></th>
+            <th data-k="xp" class="num">XP <span class="ico">↕</span></th>
+            <th data-k="baseDoses" class="num">Base doses <span class="ico">↕</span></th>
+            <th data-k="expDoses" class="num">Expected doses <span class="ico">↕</span></th>
+            <th data-k="cost" class="num">Buy cost <span class="ico">↕</span></th>
+            <th data-k="revenue" class="num">Sell value <span class="ico">↕</span></th>
+            <th data-k="profit" class="num">GP / potion <span class="ico">↕</span></th>
+            <th data-k="profitPct" class="num">Profit % <span class="ico">↕</span></th>
+            <th data-k="gpxp" class="num">GP / XP <span class="ico">↕</span></th>
             <th>Notes</th>
           </tr>
         </thead>
-        <tbody id="tbody"></tbody>
+        <tbody id="tbody">
+          <tr><td colspan="10" class="empty">Fetching data…</td></tr>
+        </tbody>
       </table>
     </div>
     <div class="foot">Mechanics: Amulet adds 0.15 expected dose when base&lt;4 (cap 4). Goggles save 10% of secondaries (excl. dust). All potion prices per‑dose from the (4) item. ECTS option for dust.</div>
@@ -142,7 +217,7 @@
   const fmt = n => (n==null || Number.isNaN(n))? '—' : n.toLocaleString();
   const pct = n => (n==null || Number.isNaN(n))? '—' : ((n>=0?'+':'') + n.toFixed(1) + '%');
   const n2 = n => (n==null || Number.isNaN(n))? null : +n;
-  const HEADERS = {'Accept':'application/json','Api-User-Agent':'HerbLive/2.1 (single-file browser app)'};
+  const HEADERS = {'Accept':'application/json','Api-User-Agent':'HerbLive/3.0 (single-file browser app)'};
 
   const els = {
     status: $('#status'), lastUpdate: $('#lastUpdate'),
@@ -151,6 +226,8 @@
     refreshNow: $('#refreshNow')
   };
 
+  function setStatus(text, busy){ els.status.textContent=text; els.status.classList.toggle('busy', !!busy); }
+
   function parseDoseSuffix(name){ const m = String(name).trim().match(/\((\d)\)$/); return m? Number(m[1]) : null; }
   const isPotionName = (name)=> /\(\d\)$/.test(name);
   const isUnf = (name)=> /\(unf\)/i.test(name);
@@ -158,17 +235,17 @@
 
   let MAP=null, PRICE=null;
   async function fetchMapping(){
-    els.status.textContent='Loading mapping…';
+    setStatus('Loading mapping…', true);
     const r=await fetch('https://prices.runescape.wiki/api/v1/osrs/mapping',{headers:HEADERS});
     if(!r.ok) throw new Error('mapping '+r.status);
     const arr=await r.json(); const map=new Map(); for(const it of arr){ map.set(it.name.toLowerCase(), it); }
-    MAP=map; els.status.textContent='Mapping ready ('+arr.length+' items)';
+    MAP=map; setStatus('Mapping ready ('+arr.length+' items)');
   }
   async function fetchLatest(){
-    els.status.textContent='Fetching latest…';
+    setStatus('Fetching latest…', true);
     const r=await fetch('https://prices.runescape.wiki/api/v1/osrs/latest',{headers:HEADERS});
     if(!r.ok) throw new Error('latest '+r.status);
-    const j=await r.json(); PRICE=j.data; els.lastUpdate.textContent='Updated '+new Date().toLocaleTimeString(); els.status.textContent='Prices ready';
+    const j=await r.json(); PRICE=j.data; els.lastUpdate.textContent='Updated '+new Date().toLocaleTimeString(); setStatus('Prices ready');
   }
   function findItem(name){ return MAP?.get(String(name).trim().toLowerCase()) || null; }
   function priceFor(nameOrId){
@@ -266,27 +343,51 @@
       </tr>`;
     }).join('');
 
-    return `<div class="expand">
-      <h4>${esc(r.name)}</h4>
-      <div class="meta">${head}</div>
-      <div class="hint" style="margin-bottom:6px">Component costs use <span class="kbd">${basisLabel(els.buyBasis.value)}</span> for buy basis. Potion components are valued at <b>(4) per‑dose</b>. Goggles apply −10% expected quantity to secondaries (except Crystal dust). Crystal dust can be valued from ECTS depending on the selector.</div>
-      <table>
-        <thead>
-          <tr><th>Component</th><th class="num">Qty</th><th class="num">Eff. Qty</th><th class="num">Unit gp</th><th class="num">Total gp</th><th>Notes</th></tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+    return `<div class="expand" aria-hidden="true">
+      <div class="expand-inner">
+        <h4>${esc(r.name)}</h4>
+        <div class="meta">${head}</div>
+        <div class="hint" style="margin-bottom:6px">Component costs use <span class="kbd">${basisLabel(els.buyBasis.value)}</span> for buy basis. Potion components are valued at <b>(4) per‑dose</b>. Goggles apply −10% expected quantity to secondaries (except Crystal dust). Crystal dust can be valued from ECTS depending on the selector.</div>
+        <table>
+          <thead>
+            <tr><th>Component</th><th class="num">Qty</th><th class="num">Eff. Qty</th><th class="num">Unit gp</th><th class="num">Total gp</th><th>Notes</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>`;
+  }
+
+  function toggleDetail(tr, det){
+    const box = det.querySelector('.expand');
+    const isOpen = det.classList.contains('open');
+    if(isOpen){
+      // closing: from current height to 0
+      const h = box.scrollHeight; box.style.maxHeight = h + 'px'; box.offsetHeight;
+      box.style.maxHeight = '0px';
+      tr.setAttribute('aria-expanded','false');
+      box.setAttribute('aria-hidden','true');
+      det.classList.remove('open');
+    } else {
+      // opening: 0 -> content, then remove inline height after transition
+      box.style.maxHeight = '0px'; box.offsetHeight;
+      box.style.maxHeight = box.scrollHeight + 'px';
+      const onEnd = ()=>{ box.style.maxHeight = 'none'; box.removeEventListener('transitionend', onEnd); };
+      box.addEventListener('transitionend', onEnd);
+      tr.setAttribute('aria-expanded','true');
+      box.setAttribute('aria-hidden','false');
+      det.classList.add('open');
+    }
   }
 
   function renderRows(rows){
     const tb=els.tbody; tb.innerHTML='';
     const COLS = document.querySelectorAll('#tbl thead th').length;
     for(const r of rows){
-      const tr=document.createElement('tr'); tr.className='rowclick'; tr.dataset.key=r.name;
+      const tr=document.createElement('tr'); tr.className='row'; tr.dataset.key=r.name; tr.tabIndex=0; tr.setAttribute('role','button'); tr.setAttribute('aria-expanded','false');
       const cls=r.profit==null? '' : (r.profit>=0? 'ok':'bad');
       tr.innerHTML=`
-        <td>${esc(r.name)}</td>
+        <td><div class="namecell"><span class="chev">▶</span> ${esc(r.name)}</div></td>
         <td class="num">${fmt(r.xp)}</td>
         <td class="num">${fmt(r.baseDoses)}</td>
         <td class="num">${fmt(r.expDoses.toFixed(2))}</td>
@@ -297,13 +398,17 @@
         <td class="num mono ${cls}">${r.gpxp==null? '—' : ( (r.gpxp>=0? '+':'') + r.gpxp.toFixed(3) )}</td>
         <td class="hint notes">${esc(r.note)}</td>`;
 
-      const det=document.createElement('tr'); det.className='detail'; det.style.display='none';
+      const det=document.createElement('tr'); det.className='detail';
       const td=document.createElement('td'); td.colSpan=COLS; td.innerHTML=rowDetailHTML(r); det.appendChild(td);
 
-      tr.addEventListener('click', (ev)=>{
-        if(ev.target.closest('a') || ev.target.closest('button')) return; // don't toggle when clicking links/buttons
-        det.style.display = det.style.display==='none'? 'table-row' : 'none';
-      });
+      const activate = (ev)=>{
+        if(ev.type==='click' && (ev.target.closest('a,button,select,input,label'))) return;
+        if(ev.type==='keydown' && !['Enter',' '].includes(ev.key)) return;
+        ev.preventDefault();
+        toggleDetail(tr, det);
+      };
+      tr.addEventListener('click', activate);
+      tr.addEventListener('keydown', activate);
 
       tb.appendChild(tr); tb.appendChild(det);
     }
@@ -314,7 +419,21 @@
     const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),r.profitPct==null?'':r.profitPct.toFixed(2),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
     return [hdr.join(','),...body].join('\n');
   }
+
   function sortBy(rows,key,asc=true){ const a=[...rows]; a.sort((x,y)=>{const vx=x[key], vy=y[key]; if(vx==null&&vy==null) return 0; if(vx==null) return 1; if(vy==null) return -1; return (asc?1:-1)*(vx>vy?1:vx<vy?-1:0)}); return a; }
+
+  function updateSortIndicators(){
+    const heads = document.querySelectorAll('#tbl thead th');
+    heads.forEach(th=>{
+      const k = th.dataset.k; if(!k) return;
+      th.classList.toggle('sorted', k===sortKey);
+      th.classList.toggle('asc', k===sortKey && sortAsc);
+      th.classList.toggle('desc', k===sortKey && !sortAsc);
+      th.setAttribute('aria-sort', k===sortKey ? (sortAsc?'ascending':'descending') : 'none');
+      const ico = th.querySelector('.ico');
+      if(ico) ico.textContent = k===sortKey ? (sortAsc ? '▲' : '▼') : '↕';
+    });
+  }
 
   // --- HARD-CODED RECIPES (product4 only) ---
   const RECIPES=[
@@ -398,12 +517,12 @@
   ];
 
   let rows=[]; let sortKey='profit', sortAsc=false;
-  async function compute(){ if(!MAP||!PRICE) return; const base = RECIPES.map(computeRow); rows = sortBy(base, sortKey, sortAsc); renderRows(rows); }
+  async function compute(){ if(!MAP||!PRICE) return; const base = RECIPES.map(computeRow); rows = sortBy(base, sortKey, sortAsc); renderRows(rows); updateSortIndicators(); }
 
   ['change','input'].forEach(evt=>{ els.buyBasis.addEventListener(evt, compute); els.sellBasis.addEventListener(evt, compute); els.tax.addEventListener(evt, compute); els.dustMode.addEventListener(evt, compute); });
 
   const thead=document.querySelector('#tbl thead');
-  thead.addEventListener('click', (e)=>{ const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k; if(!k) return; if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; } rows=sortBy(rows,sortKey,sortAsc); renderRows(rows); });
+  thead.addEventListener('click', (e)=>{ const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k; if(!k) return; if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; } rows=sortBy(rows,sortKey,sortAsc); renderRows(rows); updateSortIndicators(); });
 
   els.copyCsv.addEventListener('click', ()=>{ try{ navigator.clipboard.writeText(toCsv(rows)); alert('CSV copied.'); }catch(e){ alert('Copy failed: '+e.message);} });
   els.downloadCsv.addEventListener('click', ()=>{ const blob=new Blob([toCsv(rows)],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:'herblore-live.csv'}); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
@@ -411,19 +530,19 @@
   // Manual refresh button
   if(els.refreshNow){
     els.refreshNow.addEventListener('click', async ()=>{
-      els.status.textContent='Refreshing…';
-      els.refreshNow.disabled = true;
+      setStatus('Refreshing…', true); els.refreshNow.disabled = true;
       try{ await fetchLatest(); await compute(); }
-      catch(e){ els.status.textContent='Refresh error: '+e.message; }
+      catch(e){ setStatus('Refresh error: '+e.message); }
       finally{ els.refreshNow.disabled = false; }
     });
   }
 
   // Auto-refresh timer
-  let timer=null; function setTimer(){ if(timer) clearInterval(timer); const mins=Math.max(0, Number(els.refreshMins.value||0)); if(mins>0){ timer=setInterval(async()=>{ try{ await fetchLatest(); await compute(); }catch(e){ els.status.textContent='Refresh error: '+e.message; } }, mins*60*1000);} }
+  let timer=null; function setTimer(){ if(timer) clearInterval(timer); const mins=Math.max(0, Number(els.refreshMins.value||0)); if(mins>0){ timer=setInterval(async()=>{ try{ await fetchLatest(); await compute(); }catch(e){ setStatus('Refresh error: '+e.message); } }, mins*60*1000);} }
   els.refreshMins.addEventListener('change', setTimer);
 
-  (async function boot(){ try{ await fetchMapping(); await fetchLatest(); await compute(); setTimer(); } catch(e){ console.error(e); els.status.textContent='Error: '+e.message; } })();
+  // Boot
+  (async function boot(){ try{ await fetchMapping(); await fetchLatest(); await compute(); setTimer(); } catch(e){ console.error(e); setStatus('Error: '+e.message); } })();
 })();
 </script>
 </body>
