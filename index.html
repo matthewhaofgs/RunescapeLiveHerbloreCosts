@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>OSRS Herblore — Live GP/XP (hardcoded recipes + refresh now)</title>
+<title>OSRS Herblore — Live GP/XP (cleaned)</title>
 <style>
-  :root{ --bg:#0b0f14; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#10b981; --bad:#ef4444; --warn:#f59e0b }
+  :root{ --bg:#0b0f14; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#10b981; --bad:#ef4444 }
   html,body{height:100%}
   body{margin:0; background:linear-gradient(180deg,var(--bg),#0f172a); color:var(--ink); font:14px/1.5 system-ui,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif}
   header{padding:18px 20px; position:sticky; top:0; z-index:5; backdrop-filter:saturate(140%) blur(6px); background:linear-gradient(180deg,rgba(15,23,42,.9),rgba(15,23,42,.65))}
@@ -29,11 +29,9 @@
   th{position:sticky; top:0; background:#0e1627; text-align:left; font-weight:600; z-index:3; cursor:pointer}
   tr:hover{background:#0c1424}
   .num{text-align:right}
-  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .ok{color:var(--ok)} .bad{color:var(--bad)}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .foot{color:var(--muted); font-size:12px; padding:10px 16px}
-  details{background:#0d1423; border:1px solid #26344f; border-radius:12px; padding:10px 12px}
-  summary{cursor:pointer; color:var(--ink)}
   .hint{color:var(--muted); font-size:12px}
 
   /* Main table: let Notes wrap and visually separate it */
@@ -64,7 +62,7 @@
 <body>
 <header>
   <h1>OSRS Herblore — Live GP/XP</h1>
-  <div class="sub">Uses <span class="pill">prices.runescape.wiki</span> live data. Per‑dose valuation from the (4) item. Amulet 15% extra dose (cap 4). Goggles −10% on secondaries (excludes crystal dust). ECTS pricing option for dust.</div>
+  <div class="sub">Uses <span class="pill">prices.runescape.wiki</span> live data. Per‑dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles 10% save on secondaries (excl. crystal dust). ECTS pricing option for dust.</div>
 </header>
 
 <main class="grid">
@@ -134,7 +132,7 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
-    <div class="foot">Mechanics: Amulet adds 0.15 dose when base&lt;4 (cap 4). Goggles save 10% secondaries (excl. dust). All potion prices per‑dose from the (4) item. ECTS option for dust.</div>
+    <div class="foot">Mechanics: Amulet adds 0.15 expected dose when base&lt;4 (cap 4). Goggles save 10% of secondaries (excl. dust). All potion prices per‑dose from the (4) item. ECTS option for dust.</div>
   </section>
 </main>
 
@@ -174,10 +172,10 @@
   }
   function findItem(name){ return MAP?.get(String(name).trim().toLowerCase()) || null; }
   function priceFor(nameOrId){
-    if(!PRICE) return null; let id=null, label='';
-    if(typeof nameOrId==='number' || /^\d+$/.test(String(nameOrId))){ id=String(nameOrId); label=id; }
-    else { const it=findItem(nameOrId); if(!it) return null; id=String(it.id); label=it.name; }
-    const p=PRICE[id]; if(!p) return null; return {id,label,high:n2(p.high),low:n2(p.low)};
+    if(!PRICE) return null; let id=null;
+    if(typeof nameOrId==='number' || /^\d+$/.test(String(nameOrId))){ id=String(nameOrId); }
+    else { const it=findItem(nameOrId); if(!it) return null; id=String(it.id); }
+    const p=PRICE[id]; if(!p) return null; return {id,high:n2(p.high),low:n2(p.low)};
   }
   function basisVal(p,basis){ if(!p) return null; if(basis==='high') return n2(p.high); if(basis==='low') return n2(p.low); return (p.high!=null&&p.low!=null)? (p.high+p.low)/2 : (p.high ?? p.low ?? null); }
   function basisLabel(b){ return b==='high'? 'High' : b==='low'? 'Low' : 'Mid'; }
@@ -192,7 +190,7 @@
 
   function dustUnitFromECTS(basis){
     const ects=priceFor('Enhanced crystal teleport seed'); const v=basisVal(ects, basis);
-    return v==null? null : v/(150*10);
+    return v==null? null : v/(150*10); // 150 shards per seed; 10 dust per shard
   }
 
   function isSecondary(name){ return !(isPotionName(name) || isUnf(name)); }
@@ -204,7 +202,7 @@
 
     let cost=0; const missing=[]; const parts=[];
     for(const raw of rec.components){
-      const c = (typeof raw==='string')? (raw.includes('*')? {name:raw.split('*')[0].trim(), qty:Number(raw.split('*')[1].trim())} : {name:raw.trim(), qty:1}) : {...raw};
+      const c = (typeof raw==='string')? {name:raw.trim(), qty:1} : {...raw};
       const nm = c.name;
       let unit=null, via4=false, viaECTS=false, id=null;
 
@@ -222,7 +220,7 @@
 
       const isSec = isSecondary(nm);
       const save = (isSec && !/crystal\s*dust/i.test(nm))? 0.10 : 0;
-      const qtyBase = c.perBaseDose? baseD : (c.qty ?? (isPotionName(nm)? (parseDoseSuffix(nm) || 1) : 1));
+      const qtyBase = isPotionName(nm) ? (parseDoseSuffix(nm) || 1) : (c.qty ?? 1);
       const effQty = qtyBase * (1 - save);
       const total = unit==null? null : unit * effQty;
       if(unit==null) missing.push(nm);
@@ -312,79 +310,92 @@
   }
 
   function toCsv(rows){
-    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','Profit % of cost','GP / XP','Notes'];
+    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','Profit %','GP / XP','Notes'];
     const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),r.profitPct==null?'':r.profitPct.toFixed(2),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
     return [hdr.join(','),...body].join('\n');
   }
   function sortBy(rows,key,asc=true){ const a=[...rows]; a.sort((x,y)=>{const vx=x[key], vy=y[key]; if(vx==null&&vy==null) return 0; if(vx==null) return 1; if(vy==null) return -1; return (asc?1:-1)*(vx>vy?1:vx<vy?-1:0)}); return a; }
 
-  // --- HARD-CODED RECIPES ---
-  const DEFAULTS=[
-    {name:'Attack potion', baseDoses:3, xp:25, product3:'Attack potion(3)', product4:'Attack potion(4)', components:['Guam potion (unf)','Eye of newt']},
-    {name:'Prayer potion', baseDoses:3, xp:87.5, product3:'Prayer potion(3)', product4:'Prayer potion(4)', components:['Ranarr potion (unf)','Snape grass']},
-    {name:'Stamina(1)', baseDoses:1, xp:25.5, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(1)'},{name:'Amylase crystal', qty:1}]},
-    {name:'Stamina(2)', baseDoses:2, xp:51.0, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(2)'},{name:'Amylase crystal', qty:2}]},
-    {name:'Stamina(3)', baseDoses:3, xp:76.5, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(3)'},{name:'Amylase crystal', qty:3}]},
-    {name:'Stamina(4)', baseDoses:4, xp:102.0, product3:'Stamina potion(3)', product4:'Stamina potion(4)', components:[{name:'Super energy(4)'},{name:'Amylase crystal', qty:4}]},
-    {name:'Anti-venom (1)', baseDoses:1, xp:30, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(1)"},{name:"Zulrah's scales", qty:5}]},
-    {name:'Anti-venom (2)', baseDoses:2, xp:60, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(2)"},{name:"Zulrah's scales", qty:10}]},
-    {name:'Anti-venom (3)', baseDoses:3, xp:90, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(3)"},{name:"Zulrah's scales", qty:15}]},
-    {name:'Anti-venom (4)', baseDoses:4, xp:120, product3:'Anti-venom(3)', product4:'Anti-venom(4)', components:[{name:"Antidote++(4)"},{name:"Zulrah's scales", qty:20}]},
-    {name:'Anti-venom+ (4)', baseDoses:4, xp:125, product3:'Anti-venom+(3)', product4:'Anti-venom+(4)', components:[{name:'Anti-venom(4)'},{name:'Torstol', qty:1}]},
-    {name:'Extended antifire (1)', baseDoses:1, xp:27.5, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(1)'},{name:'Lava scale shard', qty:1}]},
-    {name:'Extended antifire (2)', baseDoses:2, xp:55, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(2)'},{name:'Lava scale shard', qty:2}]},
-    {name:'Extended antifire (3)', baseDoses:3, xp:82.5, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(3)'},{name:'Lava scale shard', qty:3}]},
-    {name:'Extended antifire (4)', baseDoses:4, xp:110, product3:'Extended antifire(3)', product4:'Extended antifire(4)', components:[{name:'Antifire potion(4)'},{name:'Lava scale shard', qty:4}]},
-    {name:'Super antifire (4)', baseDoses:4, xp:130, product3:'Super antifire potion(3)', product4:'Super antifire potion(4)', components:[{name:'Antifire potion(4)'},{name:'Crushed superior dragon bones', qty:1}]},
-    {name:'Extended super antifire (1)', baseDoses:1, xp:40, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(1)'},{name:'Lava scale shard', qty:1}]},
-    {name:'Extended super antifire (2)', baseDoses:2, xp:80, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(2)'},{name:'Lava scale shard', qty:2}]},
-    {name:'Extended super antifire (3)', baseDoses:3, xp:120, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(3)'},{name:'Lava scale shard', qty:3}]},
-    {name:'Extended super antifire (4)', baseDoses:4, xp:160, product3:'Extended super antifire(3)', product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(4)'},{name:'Lava scale shard', qty:4}]},
-    {name:'Divine super combat (1)', baseDoses:1, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine super combat (2)', baseDoses:2, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine super combat (3)', baseDoses:3, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine super combat (4)', baseDoses:4, xp:0, product3:'Divine super combat potion(3)', product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine super attack (1)', baseDoses:1, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine super attack (2)', baseDoses:2, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine super attack (3)', baseDoses:3, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine super attack (4)', baseDoses:4, xp:0, product3:'Divine super attack potion(3)', product4:'Divine super attack potion(4)', components:[{name:'Super attack(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine super strength (1)', baseDoses:1, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine super strength (2)', baseDoses:2, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine super strength (3)', baseDoses:3, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine super strength (4)', baseDoses:4, xp:0, product3:'Divine super strength potion(3)', product4:'Divine super strength potion(4)', components:[{name:'Super strength(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine super defence (1)', baseDoses:1, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine super defence (2)', baseDoses:2, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine super defence (3)', baseDoses:3, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine super defence (4)', baseDoses:4, xp:0, product3:'Divine super defence potion(3)', product4:'Divine super defence potion(4)', components:[{name:'Super defence(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine ranging (1)', baseDoses:1, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine ranging (2)', baseDoses:2, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine ranging (3)', baseDoses:3, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine ranging (4)', baseDoses:4, xp:0, product3:'Divine ranging potion(3)', product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine magic (1)', baseDoses:1, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine magic (2)', baseDoses:2, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine magic (3)', baseDoses:3, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine magic (4)', baseDoses:4, xp:0, product3:'Divine magic potion(3)', product4:'Divine magic potion(4)', components:[{name:'Magic potion(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine bastion (1)', baseDoses:1, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine bastion (2)', baseDoses:2, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine bastion (3)', baseDoses:3, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine bastion (4)', baseDoses:4, xp:0, product3:'Divine bastion potion(3)', product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Divine battlemage (1)', baseDoses:1, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(1)'},{name:'Crystal dust', qty:1}]},
-    {name:'Divine battlemage (2)', baseDoses:2, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(2)'},{name:'Crystal dust', qty:2}]},
-    {name:'Divine battlemage (3)', baseDoses:3, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(3)'},{name:'Crystal dust', qty:3}]},
-    {name:'Divine battlemage (4)', baseDoses:4, xp:0, product3:'Divine battlemage potion(3)', product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(4)'},{name:'Crystal dust', qty:4}]},
-    {name:'Extended anti-venom+ (1)', baseDoses:1, xp:20, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(1)'},{name:'Araxyte venom sack', qty:1}]},
-    {name:'Extended anti-venom+ (2)', baseDoses:2, xp:40, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(2)'},{name:'Araxyte venom sack', qty:2}]},
-    {name:'Extended anti-venom+ (3)', baseDoses:3, xp:60, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(3)'},{name:'Araxyte venom sack', qty:3}]},
-    {name:'Extended anti-venom+ (4)', baseDoses:4, xp:80, product3:'Extended anti-venom+(3)', product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(4)'},{name:'Araxyte venom sack', qty:4}]},
-    {name:'Bastion potion', baseDoses:3, xp:155, product3:'Bastion potion(3)', product4:'Bastion potion(4)', components:[{name:'Cadantine blood potion (unf)'},{name:'Wine of zamorak'}]},
-    {name:'Battlemage potion', baseDoses:3, xp:155, product3:'Battlemage potion(3)', product4:'Battlemage potion(4)', components:[{name:'Cadantine blood potion (unf)'},{name:'Potato cactus'}]},
-    {name:'Compost potion', baseDoses:3, xp:60, product3:'Compost potion(3)', product4:'Compost potion(4)', components:[{name:'Harralander potion (unf)'},{name:'Volcanic ash'}]},
-    {name:'Serum 207', baseDoses:3, xp:50, product3:'Serum 207(3)', product4:'Serum 207(4)', components:[{name:'Tarromin potion (unf)'},{name:'Ashes'}]},
-    {name:'Super combat potion (4)', baseDoses:4, xp:150, product3:'Super combat potion(3)', product4:'Super combat potion(4)', components:[{name:'Super attack(4)'},{name:'Super strength(4)'},{name:'Super defence(4)'},{name:'Torstol', qty:1}]}
-  ];
+  // --- HARD-CODED RECIPES (product4 only) ---
+  const RECIPES=[
+    {name:'Attack potion', baseDoses:3, xp:25, product4:'Attack potion(4)', components:['Guam potion (unf)','Eye of newt']},
+    {name:'Prayer potion', baseDoses:3, xp:87.5, product4:'Prayer potion(4)', components:['Ranarr potion (unf)','Snape grass']},
 
-  // No LocalStorage; always use built-in list
-  let RECIPES = DEFAULTS;
+    {name:'Stamina(1)', baseDoses:1, xp:25.5, product4:'Stamina potion(4)', components:[{name:'Super energy(1)'},{name:'Amylase crystal', qty:1}]},
+    {name:'Stamina(2)', baseDoses:2, xp:51.0, product4:'Stamina potion(4)', components:[{name:'Super energy(2)'},{name:'Amylase crystal', qty:2}]},
+    {name:'Stamina(3)', baseDoses:3, xp:76.5, product4:'Stamina potion(4)', components:[{name:'Super energy(3)'},{name:'Amylase crystal', qty:3}]},
+    {name:'Stamina(4)', baseDoses:4, xp:102.0, product4:'Stamina potion(4)', components:[{name:'Super energy(4)'},{name:'Amylase crystal', qty:4}]},
+
+    {name:'Anti-venom (1)', baseDoses:1, xp:30, product4:'Anti-venom(4)', components:[{name:"Antidote++(1)"},{name:"Zulrah's scales", qty:5}]},
+    {name:'Anti-venom (2)', baseDoses:2, xp:60, product4:'Anti-venom(4)', components:[{name:"Antidote++(2)"},{name:"Zulrah's scales", qty:10}]},
+    {name:'Anti-venom (3)', baseDoses:3, xp:90, product4:'Anti-venom(4)', components:[{name:"Antidote++(3)"},{name:"Zulrah's scales", qty:15}]},
+    {name:'Anti-venom (4)', baseDoses:4, xp:120, product4:'Anti-venom(4)', components:[{name:"Antidote++(4)"},{name:"Zulrah's scales", qty:20}]},
+    {name:'Anti-venom+ (4)', baseDoses:4, xp:125, product4:'Anti-venom+(4)', components:[{name:'Anti-venom(4)'},{name:'Torstol', qty:1}]},
+
+    {name:'Extended antifire (1)', baseDoses:1, xp:27.5, product4:'Extended antifire(4)', components:[{name:'Antifire potion(1)'},{name:'Lava scale shard', qty:1}]},
+    {name:'Extended antifire (2)', baseDoses:2, xp:55, product4:'Extended antifire(4)', components:[{name:'Antifire potion(2)'},{name:'Lava scale shard', qty:2}]},
+    {name:'Extended antifire (3)', baseDoses:3, xp:82.5, product4:'Extended antifire(4)', components:[{name:'Antifire potion(3)'},{name:'Lava scale shard', qty:3}]},
+    {name:'Extended antifire (4)', baseDoses:4, xp:110, product4:'Extended antifire(4)', components:[{name:'Antifire potion(4)'},{name:'Lava scale shard', qty:4}]},
+
+    {name:'Super antifire (4)', baseDoses:4, xp:130, product4:'Super antifire potion(4)', components:[{name:'Antifire potion(4)'},{name:'Crushed superior dragon bones', qty:1}]},
+
+    {name:'Extended super antifire (1)', baseDoses:1, xp:40, product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(1)'},{name:'Lava scale shard', qty:1}]},
+    {name:'Extended super antifire (2)', baseDoses:2, xp:80, product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(2)'},{name:'Lava scale shard', qty:2}]},
+    {name:'Extended super antifire (3)', baseDoses:3, xp:120, product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(3)'},{name:'Lava scale shard', qty:3}]},
+    {name:'Extended super antifire (4)', baseDoses:4, xp:160, product4:'Extended super antifire(4)', components:[{name:'Super antifire potion(4)'},{name:'Lava scale shard', qty:4}]},
+
+    {name:'Divine super combat (1)', baseDoses:1, xp:0, product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super combat (2)', baseDoses:2, xp:0, product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super combat (3)', baseDoses:3, xp:0, product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super combat (4)', baseDoses:4, xp:0, product4:'Divine super combat potion(4)', components:[{name:'Super combat potion(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine super attack (1)', baseDoses:1, xp:0, product4:'Divine super attack potion(4)', components:[{name:'Super attack(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super attack (2)', baseDoses:2, xp:0, product4:'Divine super attack potion(4)', components:[{name:'Super attack(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super attack (3)', baseDoses:3, xp:0, product4:'Divine super attack potion(4)', components:[{name:'Super attack(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super attack (4)', baseDoses:4, xp:0, product4:'Divine super attack potion(4)', components:[{name:'Super attack(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine super strength (1)', baseDoses:1, xp:0, product4:'Divine super strength potion(4)', components:[{name:'Super strength(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super strength (2)', baseDoses:2, xp:0, product4:'Divine super strength potion(4)', components:[{name:'Super strength(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super strength (3)', baseDoses:3, xp:0, product4:'Divine super strength potion(4)', components:[{name:'Super strength(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super strength (4)', baseDoses:4, xp:0, product4:'Divine super strength potion(4)', components:[{name:'Super strength(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine super defence (1)', baseDoses:1, xp:0, product4:'Divine super defence potion(4)', components:[{name:'Super defence(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine super defence (2)', baseDoses:2, xp:0, product4:'Divine super defence potion(4)', components:[{name:'Super defence(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine super defence (3)', baseDoses:3, xp:0, product4:'Divine super defence potion(4)', components:[{name:'Super defence(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine super defence (4)', baseDoses:4, xp:0, product4:'Divine super defence potion(4)', components:[{name:'Super defence(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine ranging (1)', baseDoses:1, xp:0, product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine ranging (2)', baseDoses:2, xp:0, product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine ranging (3)', baseDoses:3, xp:0, product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine ranging (4)', baseDoses:4, xp:0, product4:'Divine ranging potion(4)', components:[{name:'Ranging potion(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine magic (1)', baseDoses:1, xp:0, product4:'Divine magic potion(4)', components:[{name:'Magic potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine magic (2)', baseDoses:2, xp:0, product4:'Divine magic potion(4)', components:[{name:'Magic potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine magic (3)', baseDoses:3, xp:0, product4:'Divine magic potion(4)', components:[{name:'Magic potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine magic (4)', baseDoses:4, xp:0, product4:'Divine magic potion(4)', components:[{name:'Magic potion(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine bastion (1)', baseDoses:1, xp:0, product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine bastion (2)', baseDoses:2, xp:0, product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine bastion (3)', baseDoses:3, xp:0, product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine bastion (4)', baseDoses:4, xp:0, product4:'Divine bastion potion(4)', components:[{name:'Bastion potion(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Divine battlemage (1)', baseDoses:1, xp:0, product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(1)'},{name:'Crystal dust', qty:1}]},
+    {name:'Divine battlemage (2)', baseDoses:2, xp:0, product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(2)'},{name:'Crystal dust', qty:2}]},
+    {name:'Divine battlemage (3)', baseDoses:3, xp:0, product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(3)'},{name:'Crystal dust', qty:3}]},
+    {name:'Divine battlemage (4)', baseDoses:4, xp:0, product4:'Divine battlemage potion(4)', components:[{name:'Battlemage potion(4)'},{name:'Crystal dust', qty:4}]},
+
+    {name:'Extended anti-venom+ (1)', baseDoses:1, xp:20, product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(1)'},{name:'Araxyte venom sack', qty:1}]},
+    {name:'Extended anti-venom+ (2)', baseDoses:2, xp:40, product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(2)'},{name:'Araxyte venom sack', qty:2}]},
+    {name:'Extended anti-venom+ (3)', baseDoses:3, xp:60, product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(3)'},{name:'Araxyte venom sack', qty:3}]},
+    {name:'Extended anti-venom+ (4)', baseDoses:4, xp:80, product4:'Extended anti-venom+(4)', components:[{name:'Anti-venom+(4)'},{name:'Araxyte venom sack', qty:4}]},
+
+    {name:'Bastion potion', baseDoses:3, xp:155, product4:'Bastion potion(4)', components:[{name:'Cadantine blood potion (unf)'},{name:'Wine of zamorak'}]},
+    {name:'Battlemage potion', baseDoses:3, xp:155, product4:'Battlemage potion(4)', components:[{name:'Cadantine blood potion (unf)'},{name:'Potato cactus'}]},
+    {name:'Compost potion', baseDoses:3, xp:60, product4:'Compost potion(4)', components:[{name:'Harralander potion (unf)'},{name:'Volcanic ash'}]},
+    {name:'Serum 207', baseDoses:3, xp:50, product4:'Serum 207(4)', components:[{name:'Tarromin potion (unf)'},{name:'Ashes'}]},
+
+    {name:'Super combat potion (4)', baseDoses:4, xp:150, product4:'Super combat potion(4)', components:[{name:'Super attack(4)'},{name:'Super strength(4)'},{name:'Super defence(4)'},{name:'Torstol', qty:1}]}
+  ];
 
   let rows=[]; let sortKey='profit', sortAsc=false;
   async function compute(){ if(!MAP||!PRICE) return; const base = RECIPES.map(computeRow); rows = sortBy(base, sortKey, sortAsc); renderRows(rows); }
@@ -395,7 +406,7 @@
   thead.addEventListener('click', (e)=>{ const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k; if(!k) return; if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; } rows=sortBy(rows,sortKey,sortAsc); renderRows(rows); });
 
   els.copyCsv.addEventListener('click', ()=>{ try{ navigator.clipboard.writeText(toCsv(rows)); alert('CSV copied.'); }catch(e){ alert('Copy failed: '+e.message);} });
-  els.downloadCsv.addEventListener('click', ()=>{ const blob=new Blob([toCsv(rows)],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:'herblore-live-dosefix.csv'}); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
+  els.downloadCsv.addEventListener('click', ()=>{ const blob=new Blob([toCsv(rows)],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:'herblore-live.csv'}); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
 
   // Manual refresh button
   if(els.refreshNow){
