@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>OSRS Herblore — Live GP/XP (notes separator + instant recompute)</title>
+<title>OSRS Herblore — Live GP/XP (hardcoded recipes + refresh now)</title>
 <style>
   :root{ --bg:#0b0f14; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#10b981; --bad:#ef4444; --warn:#f59e0b }
   html,body{height:100%}
@@ -17,10 +17,10 @@
   .controls{display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:10px; padding:12px 16px}
   label{display:flex; align-items:center; gap:8px; color:var(--muted)}
   select,input[type="checkbox"],input[type="number"],textarea{background:#0b1220; color:var(--ink); border:1px solid #223047; border-radius:10px; padding:8px 10px; width:100%}
-  textarea{min-height:160px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px}
   .grid{display:grid; grid-template-columns:1fr; gap:16px}
   .btn{appearance:none; border:1px solid #2b3a55; background:#0d1423; color:var(--ink); padding:8px 12px; border-radius:10px; cursor:pointer}
   .btn:hover{border-color:#3f567e}
+  button:disabled{opacity:.6; cursor:not-allowed}
   .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#0d1423; border:1px solid #26344f; font-size:12px; color:var(--muted)}
   .right{margin-left:auto}
   .tablewrap{overflow:auto; max-height:70vh}
@@ -47,7 +47,7 @@
   .expand .meta{ color:var(--muted); font-size:12px; margin-bottom:8px }
   .expand table{ width:100%; border-collapse:separate; border-spacing:0; }
   .expand th, .expand td{ border-bottom:1px solid #16223a; padding:8px 10px; white-space:nowrap; vertical-align:top }
-  .expand th + th, .expand td + td{ border-left:1px solid #16223a; } /* vertical separators to avoid "glued" cells */
+  .expand th + th, .expand td + td{ border-left:1px solid #16223a; }
   .expand .num{ padding-right:14px; }
   .expand th{ background:#0c1629; position:static; cursor:default }
   .expand a{ color:var(--accent); text-decoration:none }
@@ -55,6 +55,10 @@
   .expand td:last-child{ white-space:normal; overflow-wrap:anywhere; }
   .kbd{ font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding:1px 6px; border:1px solid #2b3a55; border-radius:6px; background:#0d1423; color:var(--muted); font-size:11px }
   .rowclick{ cursor:pointer }
+
+  /* Refresh-now layout */
+  .autorefresh .row{ display:flex; align-items:center; gap:8px; width:100% }
+  .autorefresh input{ flex:1 }
 </style>
 </head>
 <body>
@@ -94,21 +98,12 @@
           <option value="market">Direct (Crystal dust)</option>
         </select>
       </label>
-      <label>Auto-refresh (min)
-        <input id="refreshMins" type="number" min="0" step="1" value="10" />
-      </label>
-    </div>
-    <div class="controls">
-      <details>
-        <summary>Recipe list (editable JSON)</summary>
-        <div class="hint">Goggles apply −10% expected quantity to secondaries (except Crystal dust). You can edit recipes below; changes persist in LocalStorage.</div>
-        <textarea id="recipesBox"></textarea>
-        <div class="hint" style="margin-top:6px">Saved to LocalStorage.</div>
-        <div style="display:flex; gap:8px; margin-top:8px">
-          <button class="btn" id="applyRecipes">Apply recipes</button>
-          <button class="btn" id="resetRecipes">Reset defaults</button>
+      <label class="autorefresh">Auto-refresh (min)
+        <div class="row">
+          <input id="refreshMins" type="number" min="0" step="1" value="10" />
+          <button class="btn" id="refreshNow" type="button" title="Fetch latest and recompute">Refresh now</button>
         </div>
-      </details>
+      </label>
     </div>
   </section>
 
@@ -154,8 +149,8 @@
   const els = {
     status: $('#status'), lastUpdate: $('#lastUpdate'),
     buyBasis: $('#buyBasis'), sellBasis: $('#sellBasis'), tax: $('#tax'), dustMode: $('#dustMode'), refreshMins: $('#refreshMins'),
-    recipesBox: $('#recipesBox'), applyRecipes: $('#applyRecipes'), resetRecipes: $('#resetRecipes'),
-    tbody: $('#tbody'), tbl: $('#tbl'), copyCsv: $('#copyCsv'), downloadCsv: $('#downloadCsv')
+    tbody: $('#tbody'), tbl: $('#tbl'), copyCsv: $('#copyCsv'), downloadCsv: $('#downloadCsv'),
+    refreshNow: $('#refreshNow')
   };
 
   function parseDoseSuffix(name){ const m = String(name).trim().match(/\((\d)\)$/); return m? Number(m[1]) : null; }
@@ -323,6 +318,7 @@
   }
   function sortBy(rows,key,asc=true){ const a=[...rows]; a.sort((x,y)=>{const vx=x[key], vy=y[key]; if(vx==null&&vy==null) return 0; if(vx==null) return 1; if(vy==null) return -1; return (asc?1:-1)*(vx>vy?1:vx<vy?-1:0)}); return a; }
 
+  // --- HARD-CODED RECIPES ---
   const DEFAULTS=[
     {name:'Attack potion', baseDoses:3, xp:25, product3:'Attack potion(3)', product4:'Attack potion(4)', components:['Guam potion (unf)','Eye of newt']},
     {name:'Prayer potion', baseDoses:3, xp:87.5, product3:'Prayer potion(3)', product4:'Prayer potion(4)', components:['Ranarr potion (unf)','Snape grass']},
@@ -387,17 +383,11 @@
     {name:'Super combat potion (4)', baseDoses:4, xp:150, product3:'Super combat potion(3)', product4:'Super combat potion(4)', components:[{name:'Super attack(4)'},{name:'Super strength(4)'},{name:'Super defence(4)'},{name:'Torstol', qty:1}]}
   ];
 
-  function load(){ try{ const raw=localStorage.getItem('herb_recipes_dosefix'); if(raw) return JSON.parse(raw); }catch(e){} return DEFAULTS; }
-  function save(x){ localStorage.setItem('herb_recipes_dosefix', JSON.stringify(x, null, 2)); }
-
-  let RECIPES = load();
-  els.recipesBox.value = JSON.stringify(RECIPES, null, 2);
+  // No LocalStorage; always use built-in list
+  let RECIPES = DEFAULTS;
 
   let rows=[]; let sortKey='profit', sortAsc=false;
   async function compute(){ if(!MAP||!PRICE) return; const base = RECIPES.map(computeRow); rows = sortBy(base, sortKey, sortAsc); renderRows(rows); }
-
-  els.applyRecipes.addEventListener('click', ()=>{ try{ RECIPES=JSON.parse(els.recipesBox.value); save(RECIPES); compute(); }catch(e){ alert('Invalid JSON: '+e.message);} });
-  els.resetRecipes.addEventListener('click', ()=>{ RECIPES=DEFAULTS; els.recipesBox.value=JSON.stringify(RECIPES,null,2); save(RECIPES); compute(); });
 
   ['change','input'].forEach(evt=>{ els.buyBasis.addEventListener(evt, compute); els.sellBasis.addEventListener(evt, compute); els.tax.addEventListener(evt, compute); els.dustMode.addEventListener(evt, compute); });
 
@@ -407,6 +397,18 @@
   els.copyCsv.addEventListener('click', ()=>{ try{ navigator.clipboard.writeText(toCsv(rows)); alert('CSV copied.'); }catch(e){ alert('Copy failed: '+e.message);} });
   els.downloadCsv.addEventListener('click', ()=>{ const blob=new Blob([toCsv(rows)],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:'herblore-live-dosefix.csv'}); document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
 
+  // Manual refresh button
+  if(els.refreshNow){
+    els.refreshNow.addEventListener('click', async ()=>{
+      els.status.textContent='Refreshing…';
+      els.refreshNow.disabled = true;
+      try{ await fetchLatest(); await compute(); }
+      catch(e){ els.status.textContent='Refresh error: '+e.message; }
+      finally{ els.refreshNow.disabled = false; }
+    });
+  }
+
+  // Auto-refresh timer
   let timer=null; function setTimer(){ if(timer) clearInterval(timer); const mins=Math.max(0, Number(els.refreshMins.value||0)); if(mins>0){ timer=setInterval(async()=>{ try{ await fetchLatest(); await compute(); }catch(e){ els.status.textContent='Refresh error: '+e.message; } }, mins*60*1000);} }
   els.refreshMins.addEventListener('change', setTimer);
 
@@ -415,4 +417,3 @@
 </script>
 </body>
 </html>
-
