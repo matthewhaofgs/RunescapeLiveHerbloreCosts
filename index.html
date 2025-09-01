@@ -126,6 +126,15 @@
   /* Empty state */
   .empty{padding:28px; text-align:center; color:var(--muted)}
 
+  /* Tooltip / Abbreviation styling */
+  abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
+  .th-full{display:inline}
+  .th-short{display:none}
+  @media (max-width: 1100px){
+    th .th-full{display:none}
+    th .th-short{display:inline}
+  }
+
   /* Utility */
   .fade-in{animation:fadeIn var(--fx-slow)}
   @keyframes fadeIn{from{opacity:.6; transform:translateY(4px)} to{opacity:1; transform:translateY(0)}}
@@ -192,8 +201,16 @@
           <tr>
             <th data-k="name">Potion <span class="ico">↕</span></th>
             <th data-k="xp" class="num">XP <span class="ico">↕</span></th>
-            <th data-k="baseDoses" class="num">Base doses <span class="ico">↕</span></th>
-            <th data-k="expDoses" class="num">Expected doses <span class="ico">↕</span></th>
+            <th data-k="baseDoses" class="num">
+              <span class="th-full">Base doses</span>
+              <abbr class="th-short" title="Base doses: the number of doses the input potion contributes before any amulet effect. e.g. Stamina(3) → 3; (4)‑dose recipes → 4.">Base</abbr>
+              <span class="ico">↕</span>
+            </th>
+            <th data-k="expDoses" class="num">
+              <span class="th-full">Expected doses</span>
+              <abbr class="th-short" title="Expected doses: min(4, Base + 0.15). Amulet adds +0.15 expected dose when Base&lt;4 (cap 4). Goggles do not change doses; they only reduce secondary quantities.">Exp.</abbr>
+              <span class="ico">↕</span>
+            </th>
             <th data-k="cost" class="num">Buy cost <span class="ico">↕</span></th>
             <th data-k="revenue" class="num">Sell value <span class="ico">↕</span></th>
             <th data-k="profit" class="num">GP / potion <span class="ico">↕</span></th>
