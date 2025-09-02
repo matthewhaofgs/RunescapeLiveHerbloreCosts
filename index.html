@@ -106,6 +106,11 @@
   .row:focus{outline:2px solid rgba(122,166,255,.7); outline-offset:-2px}
   .row[aria-expanded="true"] .chev{transform:rotate(90deg)}
 
+  /* Slow icon */
+  .slow{display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-left:6px; border-radius:50%;
+        background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.35); font-size:12px; cursor:help}
+  .slow::after{content:""}
+
   /* Detail row animation (collapsible) */
   tr.detail td{ padding:0; background:#0a1120; border-bottom:1px solid var(--border) }
   .expand{ overflow:hidden; max-height:0; opacity:0; transform:translateY(-4px); transition:max-height var(--fx-slow), opacity var(--fx-med), transform var(--fx-med); }
@@ -143,7 +148,7 @@
 <body>
 <header>
   <h1>OSRS Herblore — Live GP/XP</h1>
-  <div class="sub">Live pricing via <span class="pill">prices.runescape.wiki</span>. Per‑dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles −10% secondary save (excl. crystal dust). Optional ECTS pricing.</div>
+  <div class="sub">Live pricing via <span class="pill">prices.runescape.wiki</span>. Per‑dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles −10% secondary save (excl. crystal dust). Optional ECTS pricing. <span class="pill" title="Recipes that craft slower have a snail icon. GP/hr uses base rate × per‑recipe modifier.">🐌 = slowed</span></div>
 </header>
 
 <main class="fade-in">
@@ -176,6 +181,9 @@
           <option value="ects">From Enhanced crystal teleport seed → 150 shards → 10 dust/shard</option>
           <option value="market">Direct (Crystal dust)</option>
         </select>
+      </label>
+      <label>Base potions/hr
+        <input id="pph" type="number" min="100" step="50" value="2200" />
       </label>
       <label class="autorefresh">Auto‑refresh (min)
         <div class="row">
@@ -214,17 +222,18 @@
             <th data-k="cost" class="num">Buy cost <span class="ico">↕</span></th>
             <th data-k="revenue" class="num">Sell value <span class="ico">↕</span></th>
             <th data-k="profit" class="num">GP / potion <span class="ico">↕</span></th>
+            <th data-k="gphr" class="num">GP / hr <span class="ico">↕</span></th>
             <th data-k="profitPct" class="num">Profit % <span class="ico">↕</span></th>
             <th data-k="gpxp" class="num">GP / XP <span class="ico">↕</span></th>
             <th>Notes</th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="10" class="empty">Fetching data…</td></tr>
+          <tr><td colspan="11" class="empty">Fetching data…</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="foot">Mechanics: Amulet adds 0.15 expected dose when base&lt;4 (cap 4). Goggles save 10% of secondaries (excl. dust). All potion prices per‑dose from the (4) item. ECTS option for dust.</div>
+    <div class="foot">Mechanics: Amulet adds 0.15 expected dose when base&lt;4 (cap 4). Goggles save 10% of secondaries (excl. dust). All potion prices per‑dose from the (4) item. ECTS option for dust. GP/hr uses your <b>Base potions/hr</b> × per‑recipe slow modifier. <b>🐌</b> icon denotes slowed recipes.</div>
   </section>
 </main>
 
@@ -240,7 +249,7 @@
     status: $('#status'), lastUpdate: $('#lastUpdate'),
     buyBasis: $('#buyBasis'), sellBasis: $('#sellBasis'), tax: $('#tax'), dustMode: $('#dustMode'), refreshMins: $('#refreshMins'),
     tbody: $('#tbody'), tbl: $('#tbl'), copyCsv: $('#copyCsv'), downloadCsv: $('#downloadCsv'),
-    refreshNow: $('#refreshNow')
+    refreshNow: $('#refreshNow'), pph: $('#pph')
   };
 
   function setStatus(text, busy){ els.status.textContent=text; els.status.classList.toggle('busy', !!busy); }
@@ -249,6 +258,17 @@
   const isPotionName = (name)=> /\(\d\)$/.test(name);
   const isUnf = (name)=> /\(unf\)/i.test(name);
   const esc = (s)=> String(s).replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+
+  // ---- Per-recipe slow flags (no localStorage; hard-coded here) ----
+  // reduce = fraction slower. e.g. 0.40 => 40% speed reduction (rate × 0.60)
+  const SLOW_RULES = [
+    { test: n => /Super combat potion/i.test(n), reduce: 0.40, why: 'Requires 4 different ingredients → more banking.' },
+    { test: n => /Anti-venom\+/i.test(n) && !/Extended/i.test(n), reduce: 0.40, why: 'Secondary cannot use reagent pouch, 4 tick crafting time → more banking.' }
+  ];
+  function slowMeta(name){
+    for(const r of SLOW_RULES){ if(r.test(name)) return r; }
+    return null;
+  }
 
   let MAP=null, PRICE=null;
   async function fetchMapping(){
@@ -332,6 +352,13 @@
     const gpxp = (rec.xp>0 && profit!=null)? (profit/rec.xp) : null;
     const profitPct = (profit!=null && cost>0)? (profit/cost*100) : null;
 
+    // GP/hr using base PPH and slow modifier
+    const baseRate = Math.max(0, Number(els.pph?.value||0) || 2200);
+    const slow = slowMeta(rec.name);
+    const mult = slow ? (1 - slow.reduce) : 1;
+    const effRate = baseRate * mult;
+    const gphr = (profit!=null) ? (profit * effRate) : null;
+
     const noteBits=[];
     if(perDoseSell==null) noteBits.push(`Missing price: ${rec.product4}`);
     if(missing.length) noteBits.push(`Missing price: ${missing.join(', ')}`);
@@ -340,7 +367,16 @@
     const prodItem = findItem(rec.product4);
     const out = { productName: rec.product4, id: prodItem?.id ?? null, url: pricesUrl(prodItem?.id ?? null), perDoseSell, expDoses:expD, gross, net:revenue, taxRate:tax, basis:sellB };
 
-    return {name:rec.name, xp:rec.xp, baseDoses:baseD, expDoses:expD, cost, revenue, profit, profitPct, gpxp, note:noteBits.join(' · '), parts, out};
+    const slowInfo = slow ? {
+      reduce: slow.reduce,
+      mult,
+      why: slow.why,
+      effRate,
+      baseRate,
+      title: `${Math.round(slow.reduce*100)}% slower — ~${Math.round(effRate)} p/h (base ${Math.round(baseRate)})\nReason: ${slow.why}`
+    } : null;
+
+    return {name:rec.name, xp:rec.xp, baseDoses:baseD, expDoses:expD, cost, revenue, profit, profitPct, gpxp, gphr, note:noteBits.join(' · '), parts, out, slow: slowInfo};
   }
 
   function rowDetailHTML(r){
@@ -360,10 +396,13 @@
       </tr>`;
     }).join('');
 
+    const speed = r.slow ? `<div class="hint" style="margin-bottom:6px">🐌 <b>Slowed recipe:</b> ${Math.round(r.slow.reduce*100)}% slower → effective rate ≈ <span class="mono">${fmt(Math.round(r.slow.effRate))}</span> p/h (base <span class="mono">${fmt(Math.round(r.slow.baseRate))}</span> p/h). ${esc(r.slow.why)}</div>` : '';
+
     return `<div class="expand" aria-hidden="true">
       <div class="expand-inner">
         <h4>${esc(r.name)}</h4>
         <div class="meta">${head}</div>
+        ${speed}
         <div class="hint" style="margin-bottom:6px">Component costs use <span class="kbd">${basisLabel(els.buyBasis.value)}</span> for buy basis. Potion components are valued at <b>(4) per‑dose</b>. Goggles apply −10% expected quantity to secondaries (except Crystal dust). Crystal dust can be valued from ECTS depending on the selector.</div>
         <table>
           <thead>
@@ -403,14 +442,16 @@
     for(const r of rows){
       const tr=document.createElement('tr'); tr.className='row'; tr.dataset.key=r.name; tr.tabIndex=0; tr.setAttribute('role','button'); tr.setAttribute('aria-expanded','false');
       const cls=r.profit==null? '' : (r.profit>=0? 'ok':'bad');
+      const slowIco = r.slow ? `<abbr class="slow" title="${esc(r.slow.title)}">🐌</abbr>` : '';
       tr.innerHTML=`
-        <td><div class="namecell"><span class="chev">▶</span> ${esc(r.name)}</div></td>
+        <td><div class="namecell"><span class="chev">▶</span> ${esc(r.name)} ${slowIco}</div></td>
         <td class="num">${fmt(r.xp)}</td>
         <td class="num">${fmt(r.baseDoses)}</td>
         <td class="num">${fmt(r.expDoses.toFixed(2))}</td>
         <td class="num mono">${fmt(Math.round(r.cost??0))}</td>
         <td class="num mono">${fmt(Math.round(r.revenue??0))}</td>
         <td class="num mono ${cls}">${r.profit==null? '—' : fmt(Math.round(r.profit))}</td>
+        <td class="num mono ${cls}">${r.gphr==null? '—' : fmt(Math.round(r.gphr))}</td>
         <td class="num mono ${cls}">${pct(r.profitPct)}</td>
         <td class="num mono ${cls}">${r.gpxp==null? '—' : ( (r.gpxp>=0? '+':'') + r.gpxp.toFixed(3) )}</td>
         <td class="hint notes">${esc(r.note)}</td>`;
@@ -432,8 +473,8 @@
   }
 
   function toCsv(rows){
-    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','Profit %','GP / XP','Notes'];
-    const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),r.profitPct==null?'':r.profitPct.toFixed(2),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
+    const hdr=['Potion','XP','Base doses','Expected doses','Buy cost','Sell value','GP per potion','GP per hour','Profit %','GP / XP','Notes'];
+    const body=rows.map(r=>[r.name,r.xp,r.baseDoses,r.expDoses.toFixed(2),Math.round(r.cost??0),Math.round(r.revenue??0),Math.round(r.profit??0),Math.round(r.gphr??0),r.profitPct==null?'':r.profitPct.toFixed(2),r.gpxp==null?'':r.gpxp.toFixed(5),r.note].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
     return [hdr.join(','),...body].join('\n');
   }
 
@@ -536,7 +577,7 @@
   let rows=[]; let sortKey='profit', sortAsc=false;
   async function compute(){ if(!MAP||!PRICE) return; const base = RECIPES.map(computeRow); rows = sortBy(base, sortKey, sortAsc); renderRows(rows); updateSortIndicators(); }
 
-  ['change','input'].forEach(evt=>{ els.buyBasis.addEventListener(evt, compute); els.sellBasis.addEventListener(evt, compute); els.tax.addEventListener(evt, compute); els.dustMode.addEventListener(evt, compute); });
+  ['change','input'].forEach(evt=>{ els.buyBasis.addEventListener(evt, compute); els.sellBasis.addEventListener(evt, compute); els.tax.addEventListener(evt, compute); els.dustMode.addEventListener(evt, compute); els.pph.addEventListener(evt, compute); });
 
   const thead=document.querySelector('#tbl thead');
   thead.addEventListener('click', (e)=>{ const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k; if(!k) return; if(sortKey===k){ sortAsc=!sortAsc; } else { sortKey=k; sortAsc=true; } rows=sortBy(rows,sortKey,sortAsc); renderRows(rows); updateSortIndicators(); });
