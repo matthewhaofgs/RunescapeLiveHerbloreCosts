@@ -262,7 +262,7 @@
   // ---- Per-recipe slow flags (no localStorage; hard-coded here) ----
   // reduce = fraction slower. e.g. 0.40 => 40% speed reduction (rate × 0.60)
   const SLOW_RULES = [
-    { test: n => /Super combat potion/i.test(n), reduce: 0.40, why: 'Requires 4 different ingredients → more banking.' },
+    { test: n => /Super combat potion/i.test(n), reduce: 0.60, why: 'Requires 4 different ingredients → more banking.' },
     { test: n => /Anti-venom\+/i.test(n) && !/Extended/i.test(n), reduce: 0.40, why: 'Secondary cannot use reagent pouch, 4 tick crafting time → more banking.' }
   ];
   function slowMeta(name){
@@ -605,3 +605,4 @@
 </script>
 </body>
 </html>
+
