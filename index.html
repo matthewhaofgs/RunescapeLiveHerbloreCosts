@@ -265,7 +265,8 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
   // reduce = fraction slower. e.g. 0.40 => 40% speed reduction (rate × 0.60)
   const SLOW_RULES = [
     { test: n => /Super combat potion/i.test(n), reduce: 0.60, why: 'Requires 4 different ingredients → more banking.' },
-    { test: n => /Anti-venom\+/i.test(n) && !/Extended/i.test(n), reduce: 0.40, why: 'Secondary cannot use reagent pouch, 4 tick crafting time → more banking.' }
+    { test: n => /Anti-venom\+/i.test(n) && !/Extended/i.test(n), reduce: 0.20, why: 'Secondary cannot use reagent pouch → more banking.' },
+    { test: n => /Extended anti-venom\+/i.test(n), reduce: 0.33, why: '3 Tick craft time' }
   ];
   function slowMeta(name){
     for(const r of SLOW_RULES){ if(r.test(name)) return r; }
@@ -871,5 +872,6 @@ const RECIPES=[
 </script>
 </body>
 </html>
+
 
 
