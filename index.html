@@ -138,7 +138,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
 <header>
   <h1>OSRS Herblore — Live GP/XP</h1>
   <div class="sub">
-    Live pricing via <span class="pill">prices.runescape.wiki</span>. Per-dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles −10% secondary save (excl. crystal dust). Optional ECTS pricing.
+    Live pricing via <span class="pill">prices.runescape.wiki</span>. Per-dose valuation from the (4) item. Amulet +15% expected dose (cap 4). Goggles −10% secondary save (excl. crystal dust). Optional ECTS pricing. Optional Alch. amulet charge cost.
     <span class="pill" title="Recipes that craft slower have a snail icon. GP/hr uses base rate × per-recipe modifier.">🐌 = slowed</span>
     <span class="pill" title="Low sale volume warning. Shown when the (4) item’s average hourly buyer-side volume over the last 7 days is less than 1× your effective potions/hr (after 🐌). Hover the icon for the daily volume.">📉 = low volume</span>
   </div>
@@ -174,6 +174,14 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
         </select>
       </label>
       <label>Base potions/hr <input id="pph" type="number" min="100" step="50" value="2200" /> </label>
+
+      <!-- UPDATED: Include cost of Alchemist's-amulet charges sourced from Amulets of chemistry (fixed 10 charges per amulet) -->
+      <label title="Include the expected cost of Alchemist’s-amulet charges (10 charges per Chemistry amulet)">
+        Include Alch. amulet cost
+        <input id="chemCost" type="checkbox" checked />
+      </label>
+      <!-- /UPDATED -->
+
       <label class="autorefresh">Auto-refresh (min)
         <div class="row">
           <input id="refreshMins" type="number" min="0" step="1" value="10" />
@@ -227,8 +235,8 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     </div>
 
     <div class="foot">
-      Mechanics: Amulet adds 0.15 expected dose when base&lt;4 (cap 4). Goggles save 10% of secondaries (excl. dust). All potion prices per-dose from the (4) item.
-      ECTS option for dust. GP/hr uses your <b>Base potions/hr</b> × per-recipe slow modifier. <b>🐌</b> icon denotes slowed recipes. <b>📉</b> denotes low sale volume (7-day hourly avg &lt; 1× effective p/h).
+      Mechanics: Amulet adds 0.15 expected dose when base&lt;4 (cap 4). Goggles save 10% of secondaries (excl. dust). Crystal dust can be valued from ECTS. Optional cost for Alchemist’s-amulet charges (from Amulets of chemistry).
+      GP/hr uses your <b>Base potions/hr</b> × per-recipe slow modifier. <b>🐌</b> icon denotes slowed recipes. <b>📉</b> denotes low sale volume (7-day hourly avg &lt; 1× effective p/h).
     </div>
   </section>
 </main>
@@ -248,7 +256,8 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     tax: $('#tax'), dustMode: $('#dustMode'),
     refreshMins: $('#refreshMins'), tbody: $('#tbody'), tbl: $('#tbl'),
     copyCsv: $('#copyCsv'), downloadCsv: $('#downloadCsv'), refreshNow: $('#refreshNow'),
-    pph: $('#pph'), hideLowVol: $('#hideLowVol')
+    pph: $('#pph'), hideLowVol: $('#hideLowVol'),
+    chemCost: $('#chemCost') // UPDATED: removed chemCharges
   };
 
   function setStatus(text, busy){
@@ -261,8 +270,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
   const isUnf = (name)=> /\(unf\)/i.test(name);
   const esc = (s)=> String(s).replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 
-  // ---- Per-recipe slow flags (no localStorage; hard-coded here) ----
-  // reduce = fraction slower. e.g. 0.40 => 40% speed reduction (rate × 0.60)
+  // ---- Per-recipe slow flags ----
   const SLOW_RULES = [
     { test: n => /Super combat potion/i.test(n), reduce: 0.60, why: 'Requires 4 different ingredients → more banking.' },
     { test: n => /Anti-venom\+/i.test(n) && !/Extended/i.test(n), reduce: 0.20, why: 'Secondary cannot use reagent pouch → more banking.' },
@@ -346,8 +354,6 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
   const pricesUrl = (id)=> id? `https://prices.runescape.wiki/osrs/item/${id}` : null;
 
   // ---------- Volume fetching (7d hourly avg, buyer-side) ----------
-  // We treat "sellable volume" as the buyer-side throughput (highPriceVolume).
-  // Fallbacks handle different API shapes and limited history gracefully.
   async function fetchItemVolumeStats(id){
     const idStr=String(id);
     const base='https://prices.runescape.wiki/api/v1/osrs';
@@ -355,7 +361,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     const hours=24*7;
     const start=nowSec - hours*3600;
 
-    // Try 1: hourly timeseries with explicit window
+    // Try 1: hourly timeseries
     try{
       const u=`${base}/timeseries?timestep=1h&id=${encodeURIComponent(idStr)}&start=${start}&end=${nowSec}`;
       const r=await fetch(u,{headers:HEADERS});
@@ -369,24 +375,23 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
           return { hourlyAvg, dailyAvg: hourlyAvg*24, sampleH: vols.length, source:'ts-1h' };
         }
       }
-    }catch(_){ /* fall through */ }
+    }catch(_){}
 
-    // Try 2: daily timeseries, convert to hourly
+    // Try 2: daily timeseries → hourly
     try{
       const u=`${base}/timeseries?timestep=24h&id=${encodeURIComponent(idStr)}`;
       const r=await fetch(u,{headers:HEADERS});
       if(r.ok){
         const j=await r.json();
         const arr=Array.isArray(j?.data)? j.data : [];
-        // Prefer buyer-side if present; else total
-        const days=arr.slice(-7); // last 7 entries
+        const days=arr.slice(-7);
         const vols=days.map(o=>n2(o.highPriceVolume ?? o.avgHighPriceVolume ?? ((o.highPriceVolume??0)+(o.lowPriceVolume??0)))).filter(v=>v!=null);
         if(vols.length){
           const dayAvg = vols.reduce((a,b)=>a+b,0)/vols.length;
           return { hourlyAvg: dayAvg/24, dailyAvg: dayAvg, sampleH: vols.length*24, source:'ts-24h' };
         }
       }
-    }catch(_){ /* fall through */ }
+    }catch(_){}
 
     // Try 3: last hour snapshot
     try{
@@ -400,7 +405,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
           return { hourlyAvg: hv, dailyAvg: hv*24, sampleH: 1, source:'1h' };
         }
       }
-    }catch(_){ /* fall through */ }
+    }catch(_){}
 
     return { hourlyAvg: null, dailyAvg: null, sampleH: 0, source:'none' };
   }
@@ -408,7 +413,6 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
   async function fetchVolumes(){
     if(!MAP) return;
     setStatus('Loading volumes…', true);
-    // Unique product (4) item IDs used by our recipes
     const ids = [...new Set(RECIPES.map(r => findItem(r.product4)?.id).filter(Boolean))];
     const volMap = new Map();
     await Promise.all(ids.map(async (id)=>{
@@ -445,10 +449,8 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       } else if(isPotionName(nm)){
         const perDose=perDoseFrom4(nm, buyB);
         via4=true; unit=perDose; // per dose
-        const it4=findItem(nm.replace(/\((\d)\$/,'(4)')) || findItem(nm);
-        const it4b=findItem(nm.replace(/\((\d)\)$/,'(4)')) || findItem(nm);
-        const finalItem = it4b || it4;
-        id=finalItem?.id ?? null;
+        const it4=findItem(nm.replace(/\((\d)\)$/,'(4)')) || findItem(nm);
+        id=it4?.id ?? null;
 
       } else {
         const p=priceFor(nm);
@@ -467,6 +469,34 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       cost += total ?? 0;
       parts.push({ name:nm, id, url:pricesUrl(id), qty:qtyBase, effQty, unit, total, basis:buyB, via4, viaECTS, isSecondary:isSec, saved:save });
     }
+
+    // === UPDATED: expected cost for Alchemist’s-amulet charges (from Amulets of chemistry, fixed 10 charges/ammy) ===
+    const extraDoses = Math.max(0, expD - baseD); // model's +0.15 when base<4
+    if(els.chemCost?.checked && extraDoses > 0){
+      const chemPrice = priceFor('Amulet of chemistry');
+      const perAmmy   = basisVal(chemPrice, buyB);
+      const chargesPerAmmy = 10; // fixed
+      const gpPerCharge = (perAmmy != null) ? (perAmmy / chargesPerAmmy) : null;
+      const added = (gpPerCharge != null) ? gpPerCharge * extraDoses : null;
+
+      if(gpPerCharge == null) missing.push('Amulet of chemistry');
+
+      cost += added ?? 0;
+
+      const chemItem = findItem('Amulet of chemistry');
+      parts.push({
+        name: "Alchemist's amulet charges",
+        id: chemItem?.id ?? null,
+        url: pricesUrl(chemItem?.id ?? null),
+        qty: extraDoses,
+        effQty: extraDoses,
+        unit: gpPerCharge,
+        total: added,
+        basis: buyB,
+        via4:false, viaECTS:false, isSecondary:false, saved:0
+      });
+    }
+    // === END UPDATED ===
 
     const p4=priceFor(rec.product4);
     const v4=basisVal(p4, sellB);
@@ -556,7 +586,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
         ${vol}
         <div class="hint" style="margin-bottom:6px">
           Component costs use <span class="kbd">${basisLabel(els.buyBasis.value)}</span> for buy basis. Potion components are valued at <b>(4) per-dose</b>.
-          Goggles apply −10% expected quantity to secondaries (except Crystal dust). Crystal dust can be valued from ECTS depending on the selector.
+          Goggles apply −10% expected quantity to secondaries (except Crystal dust). Crystal dust can be valued from ECTS depending on the selector. If enabled, the expected gp for Alchemist’s-amulet charges is included.
         </div>
         <table>
           <thead>
@@ -738,8 +768,7 @@ const RECIPES=[
 {name:'Serum 207', baseDoses:3, xp:50, product4:'Serum 207(4)', components:[{name:'Tarromin potion (unf)'},{name:'Ashes'}]},
 {name:'Super combat potion (4)', baseDoses:4, xp:150, product4:'Super combat potion(4)', components:[{name:'Super attack(4)'},{name:'Super strength(4)'},{name:'Super defence(4)'},{name:'Torstol', qty:1}]},
 
-
-// ===== Added core base potions & prerequisites you were missing =====
+// ===== Core bases & prerequisites =====
 {name:'Antifire potion', baseDoses:3, xp:157.5, product4:'Antifire potion(4)', components:['Lantadyme potion (unf)','Dragon scale dust']},
 {name:'Super energy', baseDoses:3, xp:117.5, product4:'Super energy(4)', components:['Avantoe potion (unf)','Mort myre fungus']},
 {name:'Super attack', baseDoses:3, xp:100, product4:'Super attack(4)', components:['Irit potion (unf)','Eye of newt']},
@@ -749,7 +778,6 @@ const RECIPES=[
 {name:'Magic potion', baseDoses:3, xp:172.5, product4:'Magic potion(4)', components:['Lantadyme potion (unf)','Potato cactus']},
 {name:'Antidote+ (4)', baseDoses:4, xp:155, product4:'Antidote+(4)', components:[{name:'Coconut Milk'},{name:'Toadflax'},{name:'Yew roots', qty:1}]},
 {name:'Antidote++ (4)', baseDoses:4, xp:177.5, product4:'Antidote++(4)', components:[{name:'Coconut Milk'},{name:'Irit Leaf'},{name:'Magic roots', qty:1}]},
-
 
 {name:'Antipoison', baseDoses:3, xp:37.5, product4:'Antipoison(4)', components:['Marrentill potion (unf)','Unicorn horn dust']},
 {name:'Strength potion', baseDoses:3, xp:50, product4:'Strength potion(4)', components:['Tarromin potion (unf)','Limpwurt root']},
@@ -768,11 +796,6 @@ const RECIPES=[
 {name:'Saradomin brew', baseDoses:3, xp:180, product4:'Saradomin brew(4)', components:['Toadflax potion (unf)','Crushed nest']},
 {name:'Zamorak brew', baseDoses:3, xp:175, product4:'Zamorak brew(4)', components:['Torstol potion (unf)','Jangerberries']},
 {name:'Combat potion', baseDoses:3, xp:84, product4:'Combat potion(4)', components:['Harralander potion (unf)','Goat horn dust']}
-
-
-
-
-
 ];
 
   let rows=[];
@@ -795,6 +818,7 @@ const RECIPES=[
     els.tax.addEventListener(evt, compute);
     els.dustMode.addEventListener(evt, compute);
     els.pph.addEventListener(evt, compute);
+    if(els.chemCost) els.chemCost.addEventListener(evt, compute); // UPDATED: only chemCost
   });
   if(els.hideLowVol){ els.hideLowVol.addEventListener('change', compute); }
 
@@ -872,6 +896,3 @@ const RECIPES=[
 </script>
 </body>
 </html>
-
-
-
