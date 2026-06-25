@@ -277,8 +277,8 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
           <option value="4">4 dose only</option>
         </select>
       </label>
-      <label>Min sell volume/hr
-        <input id="decantMinSellVol" type="number" min="0" step="50" value="500" />
+      <label>Min sell volume/week
+        <input id="decantMinSellVol" type="number" min="0" step="1000" value="84000" />
       </label>
       <label title="Hide decanting routes where the sell item volume is below the configured decanting threshold">
         Hide low-volume (📉)
@@ -310,7 +310,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
 
     <div class="foot">
       Decanting is modeled at scale by total doses conserved. A route like 2 -&gt; 3 uses an average of 1.5 input potions per 3-dose output; 1-dose and 2-dose potions are never counted as sellable outputs.
-      <b>📉</b> denotes low sell-item volume where the latest hourly buyer-side volume is below the decanting <b>Min sell volume/hr</b> setting.
+      <b>📉</b> denotes low sell-item volume where the latest 24h buyer-side volume × 7 is below the decanting <b>Min sell volume/week</b> setting.
     </div>
   </section>
 </main>
@@ -496,19 +496,35 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       const v = VOLUME.get(String(outputItem.id));
       if(v?.hourlyAvg != null){
         const threshold = minSellVol;
-        const warn = v.hourlyAvg < threshold;
+        const weeklyVolume = n2(v.weeklyVolume ?? (v.dailyAvg != null ? v.dailyAvg * 7 : v.hourlyAvg * 168));
+        const warn = weeklyVolume < threshold;
         lowVol = {
           warn,
           hourlyAvg: v.hourlyAvg,
           dailyAvg: v.dailyAvg,
           sampleH: v.sampleH,
           threshold,
-          title: `Low sale volume — ~${Math.round(v.hourlyAvg||0).toLocaleString()}/h (~${Math.round(v.dailyAvg||0).toLocaleString()}/day)\nConfigured decant minimum: ≥${Math.round(threshold).toLocaleString()}/h.`
+          weeklyVolume,
+          title: `Low sell volume - ~${Math.round(weeklyVolume||0).toLocaleString()}/week\nConfigured decant minimum: >=${Math.round(threshold).toLocaleString()}/week.`
         };
         if(warn){
-          noteBits.push(`Low volume: ~${Math.round(v.hourlyAvg||0).toLocaleString()}/h; needs ≥${Math.round(threshold).toLocaleString()}/h`);
+          noteBits.push(`Low volume: ~${Math.round(weeklyVolume||0).toLocaleString()}/week; needs >=${Math.round(threshold).toLocaleString()}/week`);
         }
       }
+    }
+
+    if(lowVol == null && DECANT_VOLUMES_READY && minSellVol > 0){
+      lowVol = {
+        warn:true,
+        hourlyAvg:null,
+        dailyAvg:null,
+        sampleH:0,
+        threshold:minSellVol,
+        weeklyVolume:null,
+        missing:true,
+        title:`No recent sell volume found.\nConfigured decant minimum: >=${Math.round(minSellVol).toLocaleString()}/week.`
+      };
+      noteBits.push(`No recent sell volume; needs >=${Math.round(minSellVol).toLocaleString()}/week`);
     }
 
     return {
@@ -623,18 +639,19 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       setStatus('Loading decant volumes...', true);
       const ids = [...new Set(decantSellVolumeIds())];
       const volMap = new Map(VOLUME || []);
-      const r = await fetch('https://prices.runescape.wiki/api/v1/osrs/1h',{headers:HEADERS});
-      if(!r.ok) throw new Error('decant 1h '+r.status);
+      const r = await fetch('https://prices.runescape.wiki/api/v1/osrs/24h',{headers:HEADERS});
+      if(!r.ok) throw new Error('decant 24h '+r.status);
       const j = await r.json();
       const data = j?.data || {};
       for(const id of ids){
         const rec = data[String(id)] || null;
-        const hv = rec ? n2(rec.highPriceVolume ?? rec.avgHighPriceVolume ?? ((rec.highPriceVolume??0)+(rec.lowPriceVolume??0))) : null;
+        const dayVol = rec ? n2(rec.highPriceVolume ?? rec.avgHighPriceVolume ?? ((rec.highPriceVolume??0)+(rec.lowPriceVolume??0))) : null;
         volMap.set(String(id), {
-          hourlyAvg: hv,
-          dailyAvg: hv == null ? null : hv * 24,
-          sampleH: hv == null ? 0 : 1,
-          source: '1h-snapshot'
+          hourlyAvg: dayVol == null ? null : dayVol / 24,
+          dailyAvg: dayVol,
+          weeklyVolume: dayVol == null ? null : dayVol * 7,
+          sampleH: dayVol == null ? 0 : 24,
+          source: '24h-snapshot'
         });
       }
       VOLUME = volMap;
@@ -904,13 +921,13 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     const net = r.revenue == null ? fmt(null) : fmt(Math.round(r.revenue));
     const tax = r.taxRate ? `, after ${Math.round(r.taxRate*100)}% tax <span class="mono">${net}</span>` : '';
     const mode = r.inputDose < r.outputDose ? 'combine lower-dose inputs' : 'split higher-dose inputs';
-    const vol = r.lowVol && r.lowVol.hourlyAvg!=null ? `<div class="hint" style="margin-bottom:6px">${r.lowVol.warn? '📉 <b>Low sale volume:</b>' : '✓ <b>Volume OK:</b>'} Latest hourly volume: <span class="mono">${fmt(Math.round(r.lowVol.hourlyAvg))}</span>/h (~<span class="mono">${fmt(Math.round(r.lowVol.dailyAvg))}</span>/day). Configured minimum: ≥ <span class="mono">${fmt(Math.round(r.lowVol.threshold))}</span>/h.</div>` : '';
+    const volumeHTML = r.lowVol ? `<div class="hint" style="margin-bottom:6px">${r.lowVol.warn? '📉 <b>Low sale volume:</b>' : '✓ <b>Volume OK:</b>'} Weekly volume: <span class="mono">${r.lowVol.weeklyVolume == null ? 'No recent volume' : fmt(Math.round(r.lowVol.weeklyVolume)) + '/week'}</span>. Configured minimum: >= <span class="mono">${fmt(Math.round(r.lowVol.threshold))}</span>/week.</div>` : '';
 
     return `<div class="expand" aria-hidden="true">
       <div class="expand-inner">
         <h4>${esc(r.baseName)} ${esc(r.route)}</h4>
         <div class="meta">Buy ${inputName} (${basisLabel(r.buyBasis)}) at <span class="mono">${r.inputPrice == null ? fmt(null) : fmt(Math.round(r.inputPrice))}</span> x average qty <span class="mono">${fmtQty(r.inputQty)}</span> -> sell ${outputName} (${basisLabel(r.sellBasis)}) for gross <span class="mono">${gross}</span>${tax}.</div>
-        ${vol}
+        ${volumeHTML}
         <div class="hint" style="margin-bottom:6px">
           This uses batch-average math: total doses are conserved, so fractional input quantities represent the average per output potion. The 1-dose and 2-dose items are buy-only assumptions and are never treated as sellable leftovers.
         </div>
