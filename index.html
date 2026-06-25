@@ -277,6 +277,13 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
           <option value="4">4 dose only</option>
         </select>
       </label>
+      <label>Min sell volume/hr
+        <input id="decantMinSellVol" type="number" min="0" step="50" value="500" />
+      </label>
+      <label title="Hide decanting routes where the sell item volume is below the configured decanting threshold">
+        Hide low-volume (📉)
+        <input id="decantHideLowVol" type="checkbox" />
+      </label>
     </div>
 
     <div class="tablewrap">
@@ -303,6 +310,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
 
     <div class="foot">
       Decanting is modeled at scale by total doses conserved. A route like 2 -&gt; 3 uses an average of 1.5 input potions per 3-dose output; 1-dose and 2-dose potions are never counted as sellable outputs.
+      <b>📉</b> denotes low sell-item volume where the latest hourly buyer-side volume is below the decanting <b>Min sell volume/hr</b> setting.
     </div>
   </section>
 </main>
@@ -328,6 +336,8 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     tabButtons: document.querySelectorAll('.tab-btn'),
     herbloreView: $('#herbloreView'), decantView: $('#decantView'),
     decantBuyDose: $('#decantBuyDose'), decantSellDose: $('#decantSellDose'),
+    decantMinSellVol: $('#decantMinSellVol'),
+    decantHideLowVol: $('#decantHideLowVol'),
     decantTbody: $('#decantTbody'), decantTbl: $('#decantTbl'),
     copyDecantCsv: $('#copyDecantCsv'), downloadDecantCsv: $('#downloadDecantCsv')
   };
@@ -353,7 +363,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     return null;
   }
 
-  let MAP=null, PRICE=null, VOLUME=null;
+  let MAP=null, PRICE=null, VOLUME=null, DECANT_VOLUMES_READY=false, DECANT_VOLUMES_LOADING=false;
 
   async function fetchMapping(){
     setStatus('Loading mapping…', true);
@@ -447,6 +457,12 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       .sort((a,b)=>a.baseName.localeCompare(b.baseName));
   }
 
+  function decantSellVolumeIds(){
+    return decantItemGroups()
+      .flatMap(g => [g.doses[3]?.id, g.doses[4]?.id])
+      .filter(Boolean);
+  }
+
   function computeDecantRoute(group, inputDose, outputDose){
     const inputItem = group.doses[inputDose];
     const outputItem = group.doses[outputDose];
@@ -474,6 +490,27 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     if(inputPrice == null) noteBits.push(`Missing price: ${inputItem.name}`);
     if(outputPrice == null) noteBits.push(`Missing price: ${outputItem.name}`);
 
+    const minSellVol = Math.max(0, Number(els.decantMinSellVol?.value||0) || 0);
+    let lowVol = null;
+    if(outputItem.id && VOLUME?.has(String(outputItem.id))){
+      const v = VOLUME.get(String(outputItem.id));
+      if(v?.hourlyAvg != null){
+        const threshold = minSellVol;
+        const warn = v.hourlyAvg < threshold;
+        lowVol = {
+          warn,
+          hourlyAvg: v.hourlyAvg,
+          dailyAvg: v.dailyAvg,
+          sampleH: v.sampleH,
+          threshold,
+          title: `Low sale volume — ~${Math.round(v.hourlyAvg||0).toLocaleString()}/h (~${Math.round(v.dailyAvg||0).toLocaleString()}/day)\nConfigured decant minimum: ≥${Math.round(threshold).toLocaleString()}/h.`
+        };
+        if(warn){
+          noteBits.push(`Low volume: ~${Math.round(v.hourlyAvg||0).toLocaleString()}/h; needs ≥${Math.round(threshold).toLocaleString()}/h`);
+        }
+      }
+    }
+
     return {
       baseName: group.baseName, route, inputDose, outputDose,
       inputName: inputItem.name, outputName: outputItem.name,
@@ -482,6 +519,7 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       inputPrice, outputPrice, inputQty, cost, gross, revenue,
       profit, profitPerDose, profitPct, taxRate: tax,
       buyBasis: buyB, sellBasis: sellB,
+      lowVol,
       note: noteBits.join(' | ')
     };
   }
@@ -564,13 +602,50 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     if(!MAP) return;
     setStatus('Loading volumes…', true);
     const ids = [...new Set(RECIPES.map(r => findItem(r.product4)?.id).filter(Boolean))];
-    const volMap = new Map();
-    await Promise.all(ids.map(async (id)=>{
-      const v = await fetchItemVolumeStats(id);
-      volMap.set(String(id), v);
-    }));
+    const volMap = new Map(VOLUME || []);
+    const batchSize = 8;
+    for(let i=0; i<ids.length; i+=batchSize){
+      const batch = ids.slice(i, i+batchSize);
+      await Promise.all(batch.map(async (id)=>{
+        const v = await fetchItemVolumeStats(id);
+        volMap.set(String(id), v);
+      }));
+      setStatus(`Loading volumes ${Math.min(i+batch.length, ids.length)}/${ids.length}…`, true);
+    }
     VOLUME = volMap;
     setStatus('Volumes ready');
+  }
+
+  async function fetchDecantVolumes(){
+    if(!MAP || DECANT_VOLUMES_READY || DECANT_VOLUMES_LOADING) return;
+    DECANT_VOLUMES_LOADING = true;
+    try{
+      setStatus('Loading decant volumes...', true);
+      const ids = [...new Set(decantSellVolumeIds())];
+      const volMap = new Map(VOLUME || []);
+      const r = await fetch('https://prices.runescape.wiki/api/v1/osrs/1h',{headers:HEADERS});
+      if(!r.ok) throw new Error('decant 1h '+r.status);
+      const j = await r.json();
+      const data = j?.data || {};
+      for(const id of ids){
+        const rec = data[String(id)] || null;
+        const hv = rec ? n2(rec.highPriceVolume ?? rec.avgHighPriceVolume ?? ((rec.highPriceVolume??0)+(rec.lowPriceVolume??0))) : null;
+        volMap.set(String(id), {
+          hourlyAvg: hv,
+          dailyAvg: hv == null ? null : hv * 24,
+          sampleH: hv == null ? 0 : 1,
+          source: '1h-snapshot'
+        });
+      }
+      VOLUME = volMap;
+      DECANT_VOLUMES_READY = true;
+      setStatus('Decant volumes ready');
+      await compute();
+    } catch(e){
+      setStatus('Decant volume error: '+e.message);
+    } finally {
+      DECANT_VOLUMES_LOADING = false;
+    }
   }
 
   function computeRow(rec){
@@ -829,11 +904,13 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
     const net = r.revenue == null ? fmt(null) : fmt(Math.round(r.revenue));
     const tax = r.taxRate ? `, after ${Math.round(r.taxRate*100)}% tax <span class="mono">${net}</span>` : '';
     const mode = r.inputDose < r.outputDose ? 'combine lower-dose inputs' : 'split higher-dose inputs';
+    const vol = r.lowVol && r.lowVol.hourlyAvg!=null ? `<div class="hint" style="margin-bottom:6px">${r.lowVol.warn? '📉 <b>Low sale volume:</b>' : '✓ <b>Volume OK:</b>'} Latest hourly volume: <span class="mono">${fmt(Math.round(r.lowVol.hourlyAvg))}</span>/h (~<span class="mono">${fmt(Math.round(r.lowVol.dailyAvg))}</span>/day). Configured minimum: ≥ <span class="mono">${fmt(Math.round(r.lowVol.threshold))}</span>/h.</div>` : '';
 
     return `<div class="expand" aria-hidden="true">
       <div class="expand-inner">
         <h4>${esc(r.baseName)} ${esc(r.route)}</h4>
         <div class="meta">Buy ${inputName} (${basisLabel(r.buyBasis)}) at <span class="mono">${r.inputPrice == null ? fmt(null) : fmt(Math.round(r.inputPrice))}</span> x average qty <span class="mono">${fmtQty(r.inputQty)}</span> -> sell ${outputName} (${basisLabel(r.sellBasis)}) for gross <span class="mono">${gross}</span>${tax}.</div>
+        ${vol}
         <div class="hint" style="margin-bottom:6px">
           This uses batch-average math: total doses are conserved, so fractional input quantities represent the average per output potion. The 1-dose and 2-dose items are buy-only assumptions and are never treated as sellable leftovers.
         </div>
@@ -871,8 +948,9 @@ abbr[title]{text-decoration:none; border-bottom:1px dotted #3b4a6a; cursor:help}
       tr.setAttribute('aria-expanded','false');
 
       const cls = r.profit == null ? '' : (r.profit >= 0 ? 'ok' : 'bad');
+      const lowIco = (r.lowVol && r.lowVol.warn) ? `<abbr class="lowvol" title="${esc(r.lowVol.title)}">📉</abbr>` : '';
       tr.innerHTML = `
-        <td><div class="namecell"><span class="chev">&#9654;</span> ${esc(r.baseName)}</div></td>
+        <td><div class="namecell"><span class="chev">&#9654;</span> ${esc(r.baseName)} ${lowIco}</div></td>
         <td class="mono">${esc(r.route)}</td>
         <td class="num mono">${r.inputPrice == null ? fmt(null) : fmt(Math.round(r.inputPrice))}</td>
         <td class="num mono">${fmtQty(r.inputQty)}</td>
@@ -1076,7 +1154,11 @@ const RECIPES=[
     renderRows(rows);
     updateSortIndicators();
 
-    decantRows = sortBy(computeDecantRows(), decantSortKey, decantSortAsc);
+    const decantBase = computeDecantRows();
+    const decantFiltered = (els.decantHideLowVol && els.decantHideLowVol.checked)
+      ? decantBase.filter(r => !(r.lowVol && r.lowVol.warn))
+      : decantBase;
+    decantRows = sortBy(decantFiltered, decantSortKey, decantSortAsc);
     renderDecantRows(decantRows);
     updateDecantSortIndicators();
   }
@@ -1090,6 +1172,8 @@ const RECIPES=[
     if(els.chemCost) els.chemCost.addEventListener(evt, compute); // UPDATED: only chemCost
     if(els.decantBuyDose) els.decantBuyDose.addEventListener(evt, compute);
     if(els.decantSellDose) els.decantSellDose.addEventListener(evt, compute);
+    if(els.decantMinSellVol) els.decantMinSellVol.addEventListener(evt, compute);
+    if(els.decantHideLowVol) els.decantHideLowVol.addEventListener(evt, compute);
   });
   if(els.hideLowVol){ els.hideLowVol.addEventListener('change', compute); }
 
@@ -1102,6 +1186,7 @@ const RECIPES=[
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-selected', active ? 'true' : 'false');
     });
+    if(viewId === 'decantView') fetchDecantVolumes();
   }
 
   els.tabButtons.forEach(btn=>{
@@ -1161,7 +1246,10 @@ const RECIPES=[
       els.refreshNow.disabled = true;
       try{
         await fetchLatest();
+        await compute();
+        DECANT_VOLUMES_READY = false;
         await fetchVolumes(); // refresh volumes too
+        if(!els.decantView?.hidden) await fetchDecantVolumes();
         await compute();
       } catch(e){
         setStatus('Refresh error: '+e.message);
@@ -1193,6 +1281,7 @@ const RECIPES=[
     try{
       await fetchMapping();
       await fetchLatest();
+      await compute();
       await fetchVolumes();
       await compute();
       setTimer();
